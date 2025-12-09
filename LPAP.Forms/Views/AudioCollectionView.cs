@@ -25,6 +25,9 @@ namespace LPAP.Forms.Views
         private Point _dragStartPoint;
         private bool _isDragging;
         private int _insertionIndex = -1;
+        private List<AudioObj>? _selectionBeforeClick;
+
+
 
         private sealed class DragPayload
         {
@@ -66,7 +69,7 @@ namespace LPAP.Forms.Views
             this.listBox_audios.MouseDown += this.ListBox_Audios_MouseDown;
             this.listBox_audios.MouseMove += this.ListBox_Audios_MouseMove;
             this.listBox_audios.MouseUp += this.ListBox_Audios_MouseUp;
-            this.listBox_audios.DoubleClick += ListBox_Audios_DoubleClick;
+            this.listBox_audios.DoubleClick += this.ListBox_Audios_DoubleClick;
 
 
             this.listBox_audios.AllowDrop = true;
@@ -295,70 +298,134 @@ namespace LPAP.Forms.Views
                 int index = this.listBox_audios.IndexFromPoint(e.Location);
                 if (index >= 0)
                 {
-                    // Wenn Item nicht bereits in der Auswahl → nur dieses selektieren
+                    // Rechtsklick: Explorer-Style – wenn nicht in Auswahl, dann nur dieses Item wählen
                     if (!this.listBox_audios.SelectedIndices.Contains(index))
                     {
                         this.listBox_audios.SelectedIndex = index;
                     }
                 }
+
+                // Snapshot hier nicht anfassen
                 return;
             }
 
             if (e.Button == MouseButtons.Left)
             {
-                this._dragStartPoint = e.Location;
-                this._isDragging = false;
+                bool ctrl = (ModifierKeys & Keys.Control) == Keys.Control;
+                bool shift = (ModifierKeys & Keys.Shift) == Keys.Shift;
+
+                int index = this.listBox_audios.IndexFromPoint(e.Location);
+
+                // Ohne Ctrl/Shift: Auswahl in allen anderen ACVs löschen
+                if (!ctrl && !shift)
+                {
+                    foreach (var view in WindowMain.OpenAudioCollectionViews)
+                    {
+                        if (!ReferenceEquals(view, this))
+                        {
+                            view.listBox_audios.ClearSelected();
+                            view._selectionBeforeClick = null;
+                        }
+                    }
+
+                    // WICHTIGER TEIL:
+                    // Wenn wir eine Mehrfachauswahl aus Ctrl/Shift aufgebaut hatten
+                    // UND jetzt ohne Ctrl/Shift auf eines der selektierten Items klicken,
+                    // dann stellen wir NACH dem normalen ListBox-Verhalten die alte Auswahl
+                    // wieder her.
+                    if (index >= 0 &&
+                        _selectionBeforeClick != null &&
+                        _selectionBeforeClick.Count > 1 &&
+                        this.listBox_audios.Items[index] is AudioObj clicked &&
+                        _selectionBeforeClick.Contains(clicked))
+                    {
+                        // Nach dem internen Selection-Update der ListBox ausführen
+                        this.BeginInvoke(new Action(() =>
+                        {
+                            this.listBox_audios.ClearSelected();
+
+                            foreach (var ao in _selectionBeforeClick)
+                            {
+                                int idx = this.AudioC.Items.IndexOf(ao);
+                                if (idx >= 0 && idx < this.listBox_audios.Items.Count)
+                                {
+                                    this.listBox_audios.SetSelected(idx, true);
+                                }
+                            }
+                        }));
+                    }
+                }
+
+                // Snapshot der Selection NUR aktualisieren, wenn der User bewusst
+                // mit Ctrl/Shift an der Mehrfachauswahl arbeitet.
+                if (ctrl || shift)
+                {
+                    _selectionBeforeClick = this.listBox_audios.SelectedItems
+                        .Cast<AudioObj>()
+                        .ToList();
+                }
+
+                _dragStartPoint = e.Location;
+                _isDragging = false;
             }
         }
+
 
         private void ListBox_Audios_MouseMove(object? sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
-            {
                 return;
-            }
 
-            if (this._isDragging)
-            {
+            if (_isDragging)
                 return;
-            }
 
-            var dx = Math.Abs(e.X - this._dragStartPoint.X);
-            var dy = Math.Abs(e.Y - this._dragStartPoint.Y);
+            var dx = Math.Abs(e.X - _dragStartPoint.X);
+            var dy = Math.Abs(e.Y - _dragStartPoint.Y);
 
-            // kleine Schwelle, um zufällige Drags zu vermeiden
             if (dx + dy < SystemInformation.DragSize.Width / 2)
-            {
                 return;
+
+            // Quelle der Drag-Items:
+            // Wenn der User mit Ctrl/Shift eine Mehrfachauswahl gebaut hat,
+            // liegt sie in _selectionBeforeClick. Die benutzen wir bevorzugt.
+            List<AudioObj> dragItems;
+
+            if (_selectionBeforeClick != null && _selectionBeforeClick.Count > 0)
+            {
+                dragItems = _selectionBeforeClick.ToList();
+            }
+            else
+            {
+                dragItems = this.listBox_audios.SelectedItems.Cast<AudioObj>().ToList();
             }
 
-            if (this.listBox_audios.SelectedItems.Count == 0)
-            {
+            if (dragItems.Count == 0)
                 return;
-            }
 
-            this._isDragging = true;
+            _isDragging = true;
 
-            var selected = this.listBox_audios.SelectedItems.Cast<AudioObj>().ToList();
-            if (selected.Count == 0)
-            {
-                return;
-            }
-
-            var payload = new DragPayload(this, selected);
+            var payload = new DragPayload(this, dragItems);
             var data = new DataObject(payload);
 
-            this.DoDragDrop(data, DragDropEffects.Move);
+            DoDragDrop(data, DragDropEffects.Move);
 
-            this._isDragging = false;
-            this._insertionIndex = -1;
-            this.listBox_audios.Invalidate();
+            _isDragging = false;
+            _insertionIndex = -1;
+            listBox_audios.Invalidate();
+
+            // Nach beendetem Drag Snapshot leeren,
+            // damit der nächste Drag seinen eigenen Kontext hat
+            _selectionBeforeClick = null;
         }
 
         private void ListBox_Audios_MouseUp(object? sender, MouseEventArgs e)
         {
-            this._isDragging = false;
+            // Wenn kein Drag & kein DoubleClick folgt, kann man hier bei Bedarf
+            // _selectionBeforeClick zurücksetzen – ich lasse es stehen,
+            // damit DoubleClick kurz danach noch Zugriff hat.
+            // Optional könnte man mit einem kleinen Timer arbeiten, ist aber overkill.
         }
+
 
 
         // --------- Drag & Drop Ziel ---------
@@ -444,11 +511,15 @@ namespace LPAP.Forms.Views
 
         private void ListBox_Audios_DoubleClick(object? sender, EventArgs e)
         {
-            this.OpenSelectedAsTrackView();
+            var items = this._selectionBeforeClick ?? this.GetSelectedAudioItems();
+            this.OpenSelectedAsTrackView(items);
+
+            this._selectionBeforeClick = null;
         }
 
 
-        // Umsortieren innerhalb dieser AudioCollection
+
+
         private void ReorderWithinThisView(List<AudioObj> movedItems, int insertIndex)
         {
             var list = this.AudioC.Items;
@@ -479,8 +550,6 @@ namespace LPAP.Forms.Views
             });
         }
 
-
-        // Verschieben zwischen zwei AudioCollectionViews (ohne Dispose!)
         private void MoveBetweenViews(AudioCollectionView srcView, List<AudioObj> movedItems, int insertIndex)
         {
             var srcList = srcView.AudioC;
@@ -559,9 +628,9 @@ namespace LPAP.Forms.Views
             return this.listBox_audios.SelectedItems.Cast<AudioObj>().ToList();
         }
 
-        private void OpenSelectedAsTrackView()
+        private void OpenSelectedAsTrackView(List<AudioObj>? items = null)
         {
-            var selected = this.GetSelectedAudioItems();
+            var selected = items ?? GetSelectedAudioItems();
             if (selected.Count == 0)
                 return;
 
@@ -570,6 +639,8 @@ namespace LPAP.Forms.Views
                 _ = new TrackView(audio, this.AudioC);
             }
         }
+
+
 
 
 
@@ -726,5 +797,37 @@ namespace LPAP.Forms.Views
             }
         }
 
+    }
+
+
+
+    internal class AudioListBox : ListBox
+    {
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                bool ctrl = (ModifierKeys & Keys.Control) == Keys.Control;
+                bool shift = (ModifierKeys & Keys.Shift) == Keys.Shift;
+
+                int index = this.IndexFromPoint(e.Location);
+
+                // Fall: Mehrfachauswahl vorhanden, kein Ctrl/Shift,
+                // und man klickt auf ein bereits selektiertes Item
+                // => wir wollen NUR draggen, NICHT die Auswahl ändern.
+                if (!ctrl && !shift &&
+                    index >= 0 &&
+                    this.SelectedIndices.Count > 1 &&
+                    this.SelectedIndices.Contains(index))
+                {
+                    // Fokus setzen, aber KEIN base.OnMouseDown aufrufen
+                    // => Selection bleibt visuell erhalten.
+                    this.Focus();
+                    return;
+                }
+            }
+
+            base.OnMouseDown(e);
+        }
     }
 }

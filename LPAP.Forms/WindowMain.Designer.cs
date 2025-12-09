@@ -29,6 +29,7 @@
         private void InitializeComponent()
         {
             this.button_import = new Button();
+            this.button_reflow = new Button();
             this.SuspendLayout();
             // 
             // button_import
@@ -42,11 +43,23 @@
             this.button_import.UseVisualStyleBackColor = false;
             this.button_import.Click += this.button_import_Click;
             // 
+            // button_reflow
+            // 
+            this.button_reflow.BackColor = Color.FromArgb(  192,   192,   255);
+            this.button_reflow.Location = new Point(517, 406);
+            this.button_reflow.Name = "button_reflow";
+            this.button_reflow.Size = new Size(75, 23);
+            this.button_reflow.TabIndex = 1;
+            this.button_reflow.Text = "Reflow";
+            this.button_reflow.UseVisualStyleBackColor = false;
+            this.button_reflow.Click += this.button_reflow_Click;
+            // 
             // WindowMain
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(604, 441);
+            this.Controls.Add(this.button_reflow);
             this.Controls.Add(this.button_import);
             this.MaximizeBox = false;
             this.MaximumSize = new Size(620, 480);
@@ -59,5 +72,6 @@
         #endregion
 
         private Button button_import;
+        private Button button_reflow;
     }
 }

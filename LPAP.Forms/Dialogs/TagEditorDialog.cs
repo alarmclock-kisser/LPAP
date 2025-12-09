@@ -338,7 +338,9 @@ namespace LPAP.Forms.Dialogs
                 {
                     var frame = TagLib.Id3v2.TextInformationFrame.Get(id3, upper, false);
                     if (frame != null && frame.Text != null && frame.Text.Length > 0)
+                    {
                         return string.Join("; ", frame.Text);
+                    }
                 }
                 else
                 {
@@ -347,7 +349,9 @@ namespace LPAP.Forms.Dialogs
                                   .OfType<TagLib.Id3v2.TextInformationFrame>()
                                   .FirstOrDefault(f => f.FrameId.ToString().EndsWith(upper, StringComparison.OrdinalIgnoreCase));
                     if (frame != null && frame.Text != null && frame.Text.Length > 0)
+                    {
                         return string.Join("; ", frame.Text);
+                    }
                 }
             }
 
@@ -577,7 +581,9 @@ namespace LPAP.Forms.Dialogs
             foreach (var tag in modifiedTags)
             {
                 if (string.IsNullOrWhiteSpace(tag.CurrentValue))
+                {
                     continue;
+                }
 
                 var id = tag.Id.ToUpperInvariant();
                 var val = tag.CurrentValue.Trim();
@@ -677,7 +683,10 @@ namespace LPAP.Forms.Dialogs
                     if (audio.CustomTags != null && audio.CustomTags.Values.ContainsKey(id))
                     {
                         originalValue = audio.CustomTags.Values[id];
-                        if (!string.IsNullOrEmpty(originalValue)) break;
+                        if (!string.IsNullOrEmpty(originalValue))
+                        {
+                            break;
+                        }
                     }
                 }
 

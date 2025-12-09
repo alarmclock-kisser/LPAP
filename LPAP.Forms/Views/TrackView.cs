@@ -19,7 +19,11 @@ namespace LPAP.Forms.Views
         internal float Volume => 1f - (this.vScrollBar_volume.Value / (float) this.vScrollBar_volume.Maximum);
 
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        internal int SamplesPerPixel { get; set; } = 256;
+        internal int SamplesPerPixel
+        {
+            get;
+            set => this.RenameForm(addZoomLevel: true);
+        } = 128;
 
         public static int InitialWidth { get; set; } = 600;
         public static int MinimumWidth { get; set; } = 200;
@@ -60,6 +64,7 @@ namespace LPAP.Forms.Views
 
             // Position & Anzeigen
             this.PositionAndShowSelf();
+            this.RenameForm();
 
             // Auf Resize reagiert Scrolling (sichtbarer Bereich ändert sich)
             this.Resize += (_, _) => this.InitializeScrolling();
@@ -71,7 +76,7 @@ namespace LPAP.Forms.Views
                 {
                     if (this.SourceAudioCollection == null)
                     {
-                        _ = new AudioCollectionView(new[] { this.Audio });
+                        _ = new AudioCollectionView([this.Audio]);
                     }
                     else
                     {
@@ -82,6 +87,8 @@ namespace LPAP.Forms.Views
                 {
                     this.Audio.Dispose();
                 }
+
+                ReflowAllTrackViews();
             };
         }
 
@@ -89,42 +96,66 @@ namespace LPAP.Forms.Views
         // Positionierung: Grid-Verhalten
         internal void PositionAndShowSelf()
         {
-            var screen = Screen.FromControl(this);
+            ReflowAllTrackViews();
+        }
+
+        internal static void ReflowAllTrackViews()
+        {
+            // Main-Fenster als Referenz
+            var main = WindowMain.Instance;
+            if (main == null)
+            {
+                return;
+            }
+
+            var views = WindowMain.OpenTrackViews
+                .Where(v => v != null && !v.IsDisposed)
+                .OrderBy(v => v.CreatedAt)
+                .ToList();
+
+
+            if (views.Count == 0)
+            {
+                return;
+            }
+
+            var screen = Screen.FromControl(main);
             var wa = screen.WorkingArea;
+
             int margin = 8;
             int spacing = 4;
 
-            var others = WindowMain.OpenTrackViews
-                .Where(tv => tv != this && !tv.IsDisposed)
-                .OrderBy(tv => tv.CreatedAt)
-                .ToList();
+            int x = wa.Left + margin;
+            int y = wa.Top + margin;
+            int columnMaxRight = x;
 
-            this.StartPosition = FormStartPosition.Manual;
-
-            if (others.Count == 0)
+            foreach (var tv in views)
             {
-                // Erste TrackView: ganz oben links
-                this.Location = new Point(wa.Left + margin, wa.Top + margin);
-            }
-            else
-            {
-                var last = others.Last();
-
-                int newX = last.Left;
-                int newY = last.Bottom + spacing;
-
-                // Passt nicht mehr nach unten → neue "Spalte" rechts
-                if (newY + this.Height > wa.Bottom - margin)
+                // Neue Spalte, wenn unten kein Platz für dieses Fenster
+                if (y + tv.Height > wa.Bottom - margin)
                 {
-                    newX = last.Right + spacing;
-                    newY = wa.Top + margin;
+                    x = columnMaxRight + spacing;
+                    y = wa.Top + margin;
+                    columnMaxRight = x;
                 }
 
-                this.Location = new Point(newX, newY);
-            }
+                tv.StartPosition = FormStartPosition.Manual;
+                tv.Location = new Point(x, y);
+                if (!tv.Visible)
+                {
+                    tv.Show(main);
+                }
 
-            this.Show();
+                y += tv.Height + spacing;
+
+                int right = tv.Right;
+                if (right > columnMaxRight)
+                {
+                    columnMaxRight = right;
+                }
+            }
         }
+
 
 
         // Timer für Waveform + Timestamp
@@ -439,5 +470,48 @@ namespace LPAP.Forms.Views
             float vol = this.Muted ? 0f : this.Volume;
             this.Audio.Volume = vol;
         }
+
+
+
+        // ---- WindowHandle doubleclick rename
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_NCLBUTTONDBLCLK = 0x00A3;
+            if (m.Msg == WM_NCLBUTTONDBLCLK)
+            {
+                try
+                {
+                    // Dialog auf UI-Thread öffnen
+                    this.BeginInvoke(new Action(this.ShowTrackRenameDialog));
+                }
+                catch { }
+                // Standardverhalten (Maximieren) unterdrücken
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+
+        private void ShowTrackRenameDialog()
+        {
+            string current = this.Audio.Name;
+            // Microsoft.VisualBasic.Interaction.InputBox wird bereits im Projekt genutzt
+            string input = Microsoft.VisualBasic.Interaction.InputBox("Enter new name for this track:", "Rename Track", current);
+            if (!string.IsNullOrWhiteSpace(input) && input != current)
+            {
+                this.Audio.Name = input;
+                this.RenameForm();
+            }
+        }
+
+        internal void RenameForm(string? name = null, bool addZoomLevel = true)
+        {
+            name ??= this.Audio.Name;
+            string zoomInfo = addZoomLevel ? $" (Zoom: {this.SamplesPerPixel} spp)" : string.Empty;
+            this.Text = $"'{name}'{zoomInfo}";
+        }
+
+
+
     }
 }

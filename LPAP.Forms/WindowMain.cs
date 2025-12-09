@@ -6,6 +6,8 @@ namespace LPAP.Forms
 {
     public partial class WindowMain : Form
     {
+        internal static WindowMain? Instance { get; private set; }
+
         internal static readonly BindingList<AudioCollectionView> OpenAudioCollectionViews = [];
         internal static readonly BindingList<TrackView> OpenTrackViews = [];
 
@@ -16,6 +18,7 @@ namespace LPAP.Forms
 
         public WindowMain()
         {
+            Instance = this;
             this.InitializeComponent();
             WindowsScreenHelper.SetWindowScreenPosition(this, [AnchorStyles.Right, AnchorStyles.Top]);
 
@@ -70,5 +73,9 @@ namespace LPAP.Forms
 
         }
 
+        private void button_reflow_Click(object sender, EventArgs e)
+        {
+            TrackView.ReflowAllTrackViews();
+        }
     }
 }

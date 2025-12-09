@@ -29,7 +29,7 @@
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            this.listBox_audios = new ListBox();
+            this.listBox_audios = new LPAP.Forms.Views.AudioListBox();
             this.contextMenuStrip_listBox = new ContextMenuStrip(this.components);
             this.openAsTrackToolStripMenuItem = new ToolStripMenuItem();
             this.renameToolStripMenuItem = new ToolStripMenuItem();
@@ -118,7 +118,7 @@
 
         #endregion
 
-        private ListBox listBox_audios;
+        private LPAP.Forms.Views.AudioListBox listBox_audios;
         private ContextMenuStrip contextMenuStrip_listBox;
         private ToolStripMenuItem openAsTrackToolStripMenuItem;
         private ToolStripMenuItem renameToolStripMenuItem;
