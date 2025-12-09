@@ -200,7 +200,9 @@ namespace LPAP.Audio
         public int Read(float[] buffer, int offset, int count)
         {
             if (this._position >= this._data.Length)
+            {
                 return 0;
+            }
 
             int available = (int) Math.Min(count, this._data.Length - this._position);
             Array.Copy(this._data, this._position, buffer, offset, available);

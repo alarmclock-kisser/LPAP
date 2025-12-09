@@ -10,9 +10,9 @@ namespace LPAP.Audio
 {
     public class AudioCollection : IDisposable
     {
-        private readonly Dictionary<Guid, AudioObj> _byId = new();
+        private readonly Dictionary<Guid, AudioObj> _byId = [];
 
-        public BindingList<AudioObj> Items { get; } = new();
+        public BindingList<AudioObj> Items { get; } = [];
 
         public AudioObj? this[Guid id] =>
             this._byId.TryGetValue(id, out var obj) ? obj : null;
@@ -77,6 +77,41 @@ namespace LPAP.Audio
             this._byId[obj.Id] = obj;
         }
 
+        public bool Update(AudioObj obj, bool cloneOriginal = true)
+        {
+            if (obj == null)
+            {
+                return false;
+            }
+
+            if (this._byId.ContainsKey(obj.Id))
+            {
+                if (cloneOriginal)
+                {
+                    this._byId[obj.Id] = obj.Clone();
+                }
+                else
+                {
+                    this._byId[obj.Id] = obj;
+                }
+
+                return true;
+            }
+            else
+            {
+                if (cloneOriginal)
+                {
+                    this.Add(obj.Clone());
+                }
+                else
+                {
+                    this.Add(obj);
+                }
+            }
+
+            return false;
+        }
+
         public bool Remove(AudioObj obj)
         {
             if (obj == null)
@@ -110,6 +145,8 @@ namespace LPAP.Audio
 
             return false;
         }
+
+
 
 
         public bool Remove(Guid id)

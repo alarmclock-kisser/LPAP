@@ -4,7 +4,9 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using Microsoft.VisualBasic;
 using LPAP.Audio;
+using LPAP.Forms.Dialogs;
 
 namespace LPAP.Forms.Views
 {
@@ -64,6 +66,8 @@ namespace LPAP.Forms.Views
             this.listBox_audios.MouseDown += this.ListBox_Audios_MouseDown;
             this.listBox_audios.MouseMove += this.ListBox_Audios_MouseMove;
             this.listBox_audios.MouseUp += this.ListBox_Audios_MouseUp;
+            this.listBox_audios.DoubleClick += ListBox_Audios_DoubleClick;
+
 
             this.listBox_audios.AllowDrop = true;
             this.listBox_audios.DragEnter += this.ListBox_Audios_DragEnter;
@@ -101,8 +105,9 @@ namespace LPAP.Forms.Views
             }
         }
 
-        // --------- OwnerDraw: Name links, Dauer rechts, Insert-Marker ---------
 
+
+        // --------- OwnerDraw: Name links, Dauer rechts, Insert-Marker ---------
         public static void ConfigureListBoxDoubleBuffered(ListBox listBox)
         {
             try
@@ -161,10 +166,16 @@ namespace LPAP.Forms.Views
                 rightRect.Left - e.Bounds.Left - 2 * padding,
                 e.Bounds.Height);
 
+            string nameText = audio.Name ?? string.Empty;
+            if (audio.PlaybackState == PlaybackState.Playing)
+            {
+                nameText = "▶ " + nameText;
+            }
+
             // Name links, mit Ellipsis
             TextRenderer.DrawText(
                 e.Graphics,
-                audio.Name ?? string.Empty,
+                nameText,
                 e.Font,
                 leftRect,
                 foreColor,
@@ -223,8 +234,8 @@ namespace LPAP.Forms.Views
             return duration.ToString(@"m\:ss");
         }
 
-        // --------- Auto-Height-Handling ---------
 
+        // --------- Auto-Height-Handling ---------
         private void Items_ListChanged(object? sender, ListChangedEventArgs e)
         {
             this.AdjustHeightForItems();
@@ -275,10 +286,24 @@ namespace LPAP.Forms.Views
             return baseWithoutFirstRow + add;
         }
 
-        // --------- Maus / Drag-Start ---------
 
+        // --------- Maus / Drag-Start ---------
         private void ListBox_Audios_MouseDown(object? sender, MouseEventArgs e)
         {
+            if (e.Button == MouseButtons.Right)
+            {
+                int index = this.listBox_audios.IndexFromPoint(e.Location);
+                if (index >= 0)
+                {
+                    // Wenn Item nicht bereits in der Auswahl → nur dieses selektieren
+                    if (!this.listBox_audios.SelectedIndices.Contains(index))
+                    {
+                        this.listBox_audios.SelectedIndex = index;
+                    }
+                }
+                return;
+            }
+
             if (e.Button == MouseButtons.Left)
             {
                 this._dragStartPoint = e.Location;
@@ -335,8 +360,8 @@ namespace LPAP.Forms.Views
             this._isDragging = false;
         }
 
-        // --------- Drag & Drop Ziel ---------
 
+        // --------- Drag & Drop Ziel ---------
         private void ListBox_Audios_DragEnter(object? sender, DragEventArgs e)
         {
             if (e.Data != null && e.Data.GetDataPresent(typeof(DragPayload)))
@@ -417,6 +442,12 @@ namespace LPAP.Forms.Views
             this.listBox_audios.Invalidate();
         }
 
+        private void ListBox_Audios_DoubleClick(object? sender, EventArgs e)
+        {
+            this.OpenSelectedAsTrackView();
+        }
+
+
         // Umsortieren innerhalb dieser AudioCollection
         private void ReorderWithinThisView(List<AudioObj> movedItems, int insertIndex)
         {
@@ -448,6 +479,7 @@ namespace LPAP.Forms.Views
             });
         }
 
+
         // Verschieben zwischen zwei AudioCollectionViews (ohne Dispose!)
         private void MoveBetweenViews(AudioCollectionView srcView, List<AudioObj> movedItems, int insertIndex)
         {
@@ -470,6 +502,8 @@ namespace LPAP.Forms.Views
         }
 
 
+
+        // --------- Private Helpers ---------
         private void PositionAndShowSelf()
         {
             // Referenz auf WindowMain holen
@@ -518,6 +552,178 @@ namespace LPAP.Forms.Views
             }
 
             this.Show(main);
+        }
+
+        private List<AudioObj> GetSelectedAudioItems()
+        {
+            return this.listBox_audios.SelectedItems.Cast<AudioObj>().ToList();
+        }
+
+        private void OpenSelectedAsTrackView()
+        {
+            var selected = this.GetSelectedAudioItems();
+            if (selected.Count == 0)
+                return;
+
+            foreach (var audio in selected)
+            {
+                _ = new TrackView(audio, this.AudioC);
+            }
+        }
+
+
+
+
+        // --------- Kontextmenü-Events ---------
+
+        private void openAsTrackToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            this.OpenSelectedAsTrackView();
+        }
+
+        private void renameToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var selected = this.GetSelectedAudioItems();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            // Basisname: Name des ersten selektierten
+            string currentName = selected[0].Name ?? string.Empty;
+
+            string input = Interaction.InputBox(
+                "Enter new name (base name for multiple items):",
+                "Rename",
+                currentName);
+
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return;
+            }
+
+            if (selected.Count == 1)
+            {
+                selected[0].Name = input;
+                return;
+            }
+
+            // Mehrere: Nummerierung anhängen
+            // 1–9 → 1…9 ; 10–99 → 01…99 ; 100+ → 001… usw.
+            int count = selected.Count;
+            int digits = count.ToString().Length; // 1..3...
+
+            string numberFormat = new string('0', digits); // "0", "00", "000", ...
+
+            // Reihenfolge: nach Index in der Liste
+            var ordered = selected
+                .Select(a => new { Audio = a, Index = this.AudioC.Items.IndexOf(a) })
+                .Where(x => x.Index >= 0)
+                .OrderBy(x => x.Index)
+                .ToList();
+
+            int n = 1;
+            foreach (var item in ordered)
+            {
+                string suffix = n.ToString(numberFormat);
+                item.Audio.Name = $"{input} {suffix}";
+                n++;
+            }
+        }
+
+        private void editTagsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var selected = this.GetSelectedAudioItems();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            // Open one TagEditor for all selected items
+            var tagEditor = new TagEditorDialog(selected);
+        }
+
+        private void addNumberingToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Nur bei aktivem Häkchen ausführen
+            if (!this.addNumberingToolStripMenuItem.Checked)
+            {
+                return;
+            }
+
+            var selected = this.GetSelectedAudioItems();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            int count = selected.Count;
+            if (count == 0)
+            {
+                return;
+            }
+
+            string fmt = this.toolStripTextBox_format.Text?.Trim() ?? string.Empty;
+            if (fmt.Equals("default format", StringComparison.OrdinalIgnoreCase))
+            {
+                fmt = string.Empty;
+            }
+
+            // Reihenfolge: wie in der ListBox
+            var ordered = selected
+                .Select(a => new { Audio = a, Index = this.AudioC.Items.IndexOf(a) })
+                .Where(x => x.Index >= 0)
+                .OrderBy(x => x.Index)
+                .ToList();
+
+            int n = 1;
+            foreach (var item in ordered)
+            {
+                int number = n;
+
+                string numberString;
+                try
+                {
+                    numberString = string.IsNullOrEmpty(fmt)
+                        ? number.ToString()
+                        : number.ToString(fmt);
+                }
+                catch
+                {
+                    numberString = number.ToString();
+                }
+
+                // Numerierungs-Präfix vor den vorhandenen Namen stellen
+                item.Audio.Name = $"{numberString} {item.Audio.Name}";
+                n++;
+            }
+        }
+
+        private void deleteToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var selected = this.GetSelectedAudioItems();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            // Optional: Nachfrage
+            var result = MessageBox.Show(
+                $"Delete {selected.Count} track(s)?",
+                "Delete",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Warning);
+
+            if (result != DialogResult.OK)
+            {
+                return;
+            }
+
+            // Kopie, damit wir während des Löschens die Auswahl nicht verändern
+            foreach (var audio in selected.ToList())
+            {
+                this.AudioC.Remove(audio); // Remove() disposet den Track
+            }
         }
 
     }

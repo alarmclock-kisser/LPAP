@@ -7,6 +7,7 @@ namespace LPAP.Forms
     public partial class WindowMain : Form
     {
         internal static readonly BindingList<AudioCollectionView> OpenAudioCollectionViews = [];
+        internal static readonly BindingList<TrackView> OpenTrackViews = [];
 
         internal static string LastImportDirectory { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
 

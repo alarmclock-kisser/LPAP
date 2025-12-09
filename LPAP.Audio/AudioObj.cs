@@ -1,5 +1,4 @@
-﻿// LPAP.Audio/AudioObj.cs
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Drawing;
 
@@ -80,6 +79,8 @@ namespace LPAP.Audio
             }
         }
 
+        public string InitialKey { get; set; } = "C";
+
 
 
 
@@ -102,6 +103,8 @@ namespace LPAP.Audio
         public Func<long> PlaybackSamplesGetter => () => this.PlaybackPositionSamples;
 
         public Func<long> PlaybackBytesGetter => () => this.PlaybackPositionBytes;
+
+        public CustomTags CustomTags { get; set; } = new();
 
         internal void AttachPlaybackTracking(PositionTrackingSampleProvider tracking)
         {
