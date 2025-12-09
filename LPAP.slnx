@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="LPAP.Audio/LPAP.Audio.csproj" />
+  <Project Path="LPAP.Forms/LPAP.Forms.csproj" />
+</Solution>
