@@ -38,7 +38,7 @@ namespace LPAP.Audio
 
         private readonly ConcurrentDictionary<Guid, TrackHandle> _tracks = new();
 
-        private AudioPlaybackEngine(int sampleRate = 44100, int channels = 2)
+        private AudioPlaybackEngine(int sampleRate = 48000, int channels = 2)
         {
             AudioScheduling.ConfigureProcessForAudio();
 
@@ -56,7 +56,7 @@ namespace LPAP.Audio
             this._outputDevice.Play();
         }
 
-        public void Play(AudioObj audio, bool loop = false)
+        public void Play(AudioObj audio, bool loop = false, long startSample = 0)
         {
             if (audio.Data == null || audio.Data.Length == 0)
             {
@@ -82,17 +82,40 @@ namespace LPAP.Audio
                 Volume = Math.Clamp(audio.Volume, 0f, 1f)
             };
 
-            // 3) Positiontracking
+            // 3) Positiontracking (vor Resampling, damit SamplesRead auf Originalrate basiert)
             var tracking = new PositionTrackingSampleProvider(volumeProvider);
 
             // 4) Pausieren
             var pausable = new PausableSampleProvider(tracking);
+            ISampleProvider pipeline = pausable;
+
+            // 5) Channel-Anpassung auf Mixer-Format
+            if (pipeline.WaveFormat.Channels == 1 && this._mixer.WaveFormat.Channels == 2)
+            {
+                pipeline = new MonoToStereoSampleProvider(pipeline);
+            }
+            else if (pipeline.WaveFormat.Channels == 2 && this._mixer.WaveFormat.Channels == 1)
+            {
+                pipeline = new StereoToMonoSampleProvider(pipeline);
+            }
+
+            // 6) Resampling auf Mixer-Rate, damit kein Pitch-/Tempo-Shift
+            if (pipeline.WaveFormat.SampleRate != this._mixer.WaveFormat.SampleRate)
+            {
+                pipeline = new WdlResamplingSampleProvider(pipeline, this._mixer.WaveFormat.SampleRate);
+            }
 
             var handle = new TrackHandle(looping, volumeProvider, tracking, pausable);
 
             if (this._tracks.TryAdd(audio.Id, handle))
             {
-                this._mixer.AddMixerInput(pausable);
+                if (startSample > 0)
+                {
+                    looping.Seek(startSample);
+                    tracking.SetSamplePosition(startSample);
+                }
+
+                this._mixer.AddMixerInput(pipeline);
                 audio.AttachPlaybackTracking(tracking);
                 audio.SetPlaybackState(PlaybackState.Playing);
             }
@@ -123,6 +146,20 @@ namespace LPAP.Audio
             {
                 handle.Pausable.IsPaused = false;
                 audio.SetPlaybackState(PlaybackState.Playing);
+            }
+        }
+
+        public void Seek(AudioObj audio, long samplePosition)
+        {
+            if (this._tracks.TryGetValue(audio.Id, out var handle))
+            {
+                handle.Looping.Seek(samplePosition);
+                handle.Tracking.SetSamplePosition(samplePosition);
+            }
+            else
+            {
+                // Wenn nicht aktiv spielend, nur Position merken
+                audio.SetPlaybackState(PlaybackState.Stopped);
             }
         }
 
@@ -170,6 +207,11 @@ namespace LPAP.Audio
         public WaveFormat WaveFormat => this._source.WaveFormat;
 
         public long SamplesRead => Interlocked.Read(ref this._samplesRead);
+
+        public void SetSamplePosition(long samples)
+        {
+            Interlocked.Exchange(ref this._samplesRead, Math.Max(0, samples));
+        }
 
         public int Read(float[] buffer, int offset, int count)
         {
@@ -233,7 +275,9 @@ namespace LPAP.Audio
         {
             if (this._isPaused)
             {
-                return 0;
+                // Liefere Stille, aber bleibe im Mixer registriert
+                Array.Clear(buffer, offset, count);
+                return count;
             }
 
             return this._source.Read(buffer, offset, count);
@@ -269,6 +313,15 @@ namespace LPAP.Audio
         }
 
         public WaveFormat WaveFormat => this._waveFormat;
+
+        public void Seek(long samplePosition)
+        {
+            lock (this._lock)
+            {
+                long clamped = Math.Clamp(samplePosition, 0, Math.Max(0, this._data.LongLength - 1));
+                this._position = clamped;
+            }
+        }
 
         public int Read(float[] buffer, int offset, int count)
         {

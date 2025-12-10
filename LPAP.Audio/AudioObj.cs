@@ -22,6 +22,7 @@ namespace LPAP.Audio
         public int SampleRate { get; internal set; }
         public int Channels { get; internal set; }
         public int BitDepth { get; internal set; }
+        public long StartingSample { get; set; }
 
         public long LengthSamples => this.Data?.LongLength ?? 0;
         public TimeSpan Duration => this.SampleRate > 0 && this.Channels > 0
