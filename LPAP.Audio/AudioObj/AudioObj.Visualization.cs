@@ -21,6 +21,8 @@ namespace LPAP.Audio
             float caretPosition = 0.5f,
             int caretWidth = 2,
             double timeMarkerIntervalSeconds = 0.0,
+            Color? selectionColor = null,
+            float selectionAlpha = 0.33f,
             CancellationToken ct = default)
         {
             return await Task.Run(() =>
@@ -34,9 +36,11 @@ namespace LPAP.Audio
                 height = Math.Max(height, 1);
                 samplesPerPixel = Math.Max(samplesPerPixel, 1);
                 caretWidth = Math.Clamp(caretWidth, 0, 64);
+                selectionAlpha = Math.Clamp(selectionAlpha, 0f, 1f);
 
                 var bg = backColor ?? Color.White;
                 var fg = graphColor ?? Color.Black;
+                var selColor = selectionColor ?? Color.LightGray;
 
                 long startSamples = offsetSamples ?? this.PlaybackPositionSamples;
                 if (startSamples < 0)
@@ -61,6 +65,36 @@ namespace LPAP.Audio
                 if (timeMarkerIntervalSeconds > 0.0)
                 {
                     this.DrawTimeMarkers(g, width, height, startSamples, samplesPerPixel, timeMarkerIntervalSeconds, fg, ct);
+                }
+
+                // Selection overlay (opaque rectangle)
+                long s0 = Math.Min(this.SelectionStart, this.SelectionEnd);
+                long s1 = Math.Max(this.SelectionStart, this.SelectionEnd);
+                if (s1 > s0)
+                {
+                    // compute pixel range for selection within current viewport
+                    long visibleStart = startSamples;
+                    long visibleEnd = startSamples + (long) width * samplesPerPixel * this.Channels;
+                    long selStartClamped = Math.Clamp(s0, visibleStart, visibleEnd);
+                    long selEndClamped = Math.Clamp(s1, visibleStart, visibleEnd);
+
+                    if (selEndClamped > selStartClamped)
+                    {
+                        double relStartSamples = selStartClamped - visibleStart;
+                        double relEndSamples = selEndClamped - visibleStart;
+                        // samples per pixel per channel aggregated with interleaving
+                        double samplesPerPixelInterleaved = (double) samplesPerPixel * this.Channels;
+                        int x0 = (int) Math.Floor(relStartSamples / samplesPerPixelInterleaved);
+                        int x1 = (int) Math.Ceiling(relEndSamples / samplesPerPixelInterleaved);
+                        x0 = Math.Clamp(x0, 0, width);
+                        x1 = Math.Clamp(x1, 0, width);
+                        int rectWidth = Math.Max(0, x1 - x0);
+                        if (rectWidth > 0)
+                        {
+                            using var brush = new SolidBrush(Color.FromArgb((int) Math.Round(selectionAlpha * 255), selColor));
+                            g.FillRectangle(brush, x0, 0, rectWidth, height);
+                        }
+                    }
                 }
 
                 if (caretWidth > 0)

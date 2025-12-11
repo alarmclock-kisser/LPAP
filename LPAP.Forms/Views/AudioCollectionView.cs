@@ -334,17 +334,17 @@ namespace LPAP.Forms.Views
                     // dann stellen wir NACH dem normalen ListBox-Verhalten die alte Auswahl
                     // wieder her.
                     if (index >= 0 &&
-                        _selectionBeforeClick != null &&
-                        _selectionBeforeClick.Count > 1 &&
+                        this._selectionBeforeClick != null &&
+                        this._selectionBeforeClick.Count > 1 &&
                         this.listBox_audios.Items[index] is AudioObj clicked &&
-                        _selectionBeforeClick.Contains(clicked))
+                        this._selectionBeforeClick.Contains(clicked))
                     {
                         // Nach dem internen Selection-Update der ListBox ausführen
                         this.BeginInvoke(new Action(() =>
                         {
                             this.listBox_audios.ClearSelected();
 
-                            foreach (var ao in _selectionBeforeClick)
+                            foreach (var ao in this._selectionBeforeClick)
                             {
                                 int idx = this.AudioC.Items.IndexOf(ao);
                                 if (idx >= 0 && idx < this.listBox_audios.Items.Count)
@@ -360,13 +360,13 @@ namespace LPAP.Forms.Views
                 // mit Ctrl/Shift an der Mehrfachauswahl arbeitet.
                 if (ctrl || shift)
                 {
-                    _selectionBeforeClick = this.listBox_audios.SelectedItems
+                    this._selectionBeforeClick = this.listBox_audios.SelectedItems
                         .Cast<AudioObj>()
                         .ToList();
                 }
 
-                _dragStartPoint = e.Location;
-                _isDragging = false;
+                this._dragStartPoint = e.Location;
+                this._isDragging = false;
             }
         }
 
@@ -374,25 +374,31 @@ namespace LPAP.Forms.Views
         private void ListBox_Audios_MouseMove(object? sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
+            {
                 return;
+            }
 
-            if (_isDragging)
+            if (this._isDragging)
+            {
                 return;
+            }
 
-            var dx = Math.Abs(e.X - _dragStartPoint.X);
-            var dy = Math.Abs(e.Y - _dragStartPoint.Y);
+            var dx = Math.Abs(e.X - this._dragStartPoint.X);
+            var dy = Math.Abs(e.Y - this._dragStartPoint.Y);
 
             if (dx + dy < SystemInformation.DragSize.Width / 2)
+            {
                 return;
+            }
 
             // Quelle der Drag-Items:
             // Wenn der User mit Ctrl/Shift eine Mehrfachauswahl gebaut hat,
             // liegt sie in _selectionBeforeClick. Die benutzen wir bevorzugt.
             List<AudioObj> dragItems;
 
-            if (_selectionBeforeClick != null && _selectionBeforeClick.Count > 0)
+            if (this._selectionBeforeClick != null && this._selectionBeforeClick.Count > 0)
             {
-                dragItems = _selectionBeforeClick.ToList();
+                dragItems = this._selectionBeforeClick.ToList();
             }
             else
             {
@@ -400,22 +406,24 @@ namespace LPAP.Forms.Views
             }
 
             if (dragItems.Count == 0)
+            {
                 return;
+            }
 
-            _isDragging = true;
+            this._isDragging = true;
 
             var payload = new DragPayload(this, dragItems);
             var data = new DataObject(payload);
 
-            DoDragDrop(data, DragDropEffects.Move);
+            this.DoDragDrop(data, DragDropEffects.Move);
 
-            _isDragging = false;
-            _insertionIndex = -1;
-            listBox_audios.Invalidate();
+            this._isDragging = false;
+            this._insertionIndex = -1;
+            this.listBox_audios.Invalidate();
 
             // Nach beendetem Drag Snapshot leeren,
             // damit der nächste Drag seinen eigenen Kontext hat
-            _selectionBeforeClick = null;
+            this._selectionBeforeClick = null;
         }
 
         private void ListBox_Audios_MouseUp(object? sender, MouseEventArgs e)
@@ -630,9 +638,11 @@ namespace LPAP.Forms.Views
 
         private void OpenSelectedAsTrackView(List<AudioObj>? items = null)
         {
-            var selected = items ?? GetSelectedAudioItems();
+            var selected = items ?? this.GetSelectedAudioItems();
             if (selected.Count == 0)
+            {
                 return;
+            }
 
             foreach (var audio in selected)
             {

@@ -1,8 +1,10 @@
 ﻿using LPAP.Audio;
 using System.ComponentModel;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
 
@@ -46,6 +48,12 @@ namespace LPAP.Forms.Views
         public static int MaximumWidth { get; set; } = 4096;
         public static bool AutoApplyOnClose { get; set; } = false;
 
+        // ---- Indicators ----
+        public bool IsPlaying => this.Audio.PlaybackState == PlaybackState.Playing;
+        public bool IsPaused => this.Audio.PlaybackState == PlaybackState.Paused;
+        public bool IsStopped => this.Audio.PlaybackState == PlaybackState.Stopped;
+
+
         // ---- interne Felder ----
         private readonly Timer _waveTimer = new();
         private bool _renderInProgress;
@@ -57,7 +65,12 @@ namespace LPAP.Forms.Views
         private PlaybackState _uiPlaybackState;
         private CancellationTokenSource? _renderCts;
         private long _pendingStartSample;
+        private static readonly BindingList<AudioObj> StaticClipboard = [];
         private const float DefaultCaretPosition = 0.5f;
+        private bool _isSelecting;
+        private Point _mouseDownPoint;
+        private long _mouseDownSample;
+        private const int ClickMoveTolerance = 3;
 
         public TrackView(AudioObj audio, AudioCollection? audioCollection = null)
         {
@@ -85,6 +98,8 @@ namespace LPAP.Forms.Views
             // Scrollen + Zoom via Wheel
             this.pictureBox_waveform.MouseWheel += this.PictureBox_waveform_MouseWheel;
             this.pictureBox_waveform.MouseDown += this.PictureBox_waveform_MouseDown;
+            this.pictureBox_waveform.MouseMove += this.PictureBox_waveform_MouseMove;
+            this.pictureBox_waveform.MouseUp += this.PictureBox_waveform_MouseUp;
             this.pictureBox_waveform.MouseEnter += (_, _) => this.pictureBox_waveform.Focus();
             this.MouseWheel += this.TrackView_MouseWheel;
 
@@ -274,6 +289,8 @@ namespace LPAP.Forms.Views
                     caretPosition: caretPos,
                     caretWidth: 2,
                     timeMarkerIntervalSeconds: 0.0,
+                    selectionColor: null,
+                    selectionAlpha: 0.33f,
                     ct: cts.Token);
 
                 var old = this.pictureBox_waveform.Image;
@@ -464,6 +481,14 @@ namespace LPAP.Forms.Views
 
         private async void PictureBox_waveform_MouseDown(object? sender, MouseEventArgs e)
         {
+            if (e.Button == MouseButtons.Right && this._isSelecting)
+            {
+                this._isSelecting = false;
+                this.Audio.SelectionStart = 0;
+                this.Audio.SelectionEnd = 0;
+                return;
+            }
+
             if (e.Button != MouseButtons.Left)
             {
                 return;
@@ -475,22 +500,70 @@ namespace LPAP.Forms.Views
             long targetSample = this._viewOffsetSamples + (long) localX * samplesPerPixel;
             targetSample = Math.Clamp(targetSample, 0, Math.Max(0, this.Audio.LengthSamples - 1));
 
-            this._pendingStartSample = targetSample;
-            this.Audio.StartingSample = targetSample;
-            await this.Audio.SeekAsync(targetSample);
+            // start selection, record mouse-down state; do NOT seek or set playback yet
+            this._isSelecting = true;
+            this._mouseDownPoint = new Point(localX, e.Y);
+            this._mouseDownSample = targetSample;
+            this.Audio.SelectionStart = targetSample;
+            this.Audio.SelectionEnd = targetSample;
+        }
 
-            // Offset so ausrichten, dass Cursor ungefähr mittig bleibt
-            long desiredOffset = targetSample - this.GetCaretAnchorSamples();
-            this.SetOffsetSamples(desiredOffset);
-
-            // Timestamp sofort aktualisieren
-            if (this.Audio.SampleRate > 0 && this.Audio.Channels > 0)
+        private void PictureBox_waveform_MouseMove(object? sender, MouseEventArgs e)
+        {
+            if (!this._isSelecting)
             {
-                var ts = TimeSpan.FromSeconds(targetSample / (double) (this.Audio.SampleRate * this.Audio.Channels));
-                this.textBox_timestamp.Text = ts.ToString(@"h\:mm\:ss\.fff");
+                return;
             }
 
-            this.UpdatePlaybackUiState();
+            int width = Math.Max(1, this.pictureBox_waveform.Width);
+            int localX = Math.Clamp(e.X, 0, width - 1);
+            long spp = (long) this.SamplesPerPixel * Math.Max(1, this.Audio.Channels);
+            long sample = this._viewOffsetSamples + (long) localX * spp;
+            sample = Math.Clamp(sample, 0, Math.Max(0, this.Audio.LengthSamples - 1));
+            this.Audio.SelectionEnd = sample;
+        }
+
+        private async void PictureBox_waveform_MouseUp(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                int dx = Math.Abs(e.X - this._mouseDownPoint.X);
+                int dy = Math.Abs(e.Y - this._mouseDownPoint.Y);
+                bool isClick = dx == 0 && dy == 0; // strictly same point for click
+
+                this._isSelecting = false;
+
+                if (isClick)
+                {
+                    this._pendingStartSample = this._mouseDownSample;
+                    this.Audio.StartingSample = this._mouseDownSample;
+                    await this.Audio.SeekAsync(this._mouseDownSample);
+
+                    long desiredOffset = this._mouseDownSample - this.GetCaretAnchorSamples();
+                    this.SetOffsetSamples(desiredOffset);
+
+                    if (this.Audio.SampleRate > 0 && this.Audio.Channels > 0)
+                    {
+                        var ts = TimeSpan.FromSeconds(this._mouseDownSample / (double) (this.Audio.SampleRate * this.Audio.Channels));
+                        this.textBox_timestamp.Text = ts.ToString(@"h\:mm\:ss\.fff");
+                    }
+
+                    this.UpdatePlaybackUiState();
+
+                    this.Audio.SelectionStart = 0;
+                    this.Audio.SelectionEnd = 0;
+                }
+                else
+                {
+                    // keep drag selection; do not seek
+                }
+            }
+            else if (e.Button == MouseButtons.Right && this._isSelecting)
+            {
+                this._isSelecting = false;
+                this.Audio.SelectionStart = 0;
+                this.Audio.SelectionEnd = 0;
+            }
         }
 
 
@@ -609,7 +682,7 @@ namespace LPAP.Forms.Views
         internal void RenameForm(string? name = null, bool addZoomLevel = true)
         {
             name ??= this.Audio.Name;
-            string zoomInfo = addZoomLevel ? $" (Zoom: {this.SamplesPerPixel} spp)" : string.Empty;
+            string zoomInfo = addZoomLevel ? $" ({this.SamplesPerPixel} SPP)" : string.Empty;
             this.Text = $"'{name}'{zoomInfo}";
         }
 
@@ -720,7 +793,119 @@ namespace LPAP.Forms.Views
             return (float) System.Math.Clamp(norm, 0.0, 1.0);
         }
 
+        private async void copyToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (this.Audio == null)
+            {
+                return;
+            }
 
+            if (this.Audio.SelectionStart <= 0 && this.Audio.SelectionEnd <= 0)
+            {
+                return;
+            }
 
+            // Clear to only keep last copied item
+            StaticClipboard.Clear();
+            StaticClipboard.Add(await this.Audio.CopyFromSelectionAsync(this.Audio.SelectionStart, this.Audio.SelectionEnd));
+        }
+
+        private async Task PasteFromClipboardAsync()
+        {
+            if (StaticClipboard.Count == 0)
+            {
+                return;
+            }
+
+            bool shiftFlag = (ModifierKeys & Keys.Shift) == Keys.Shift;
+
+            var item = StaticClipboard.Last();
+            long insertIndex = this._pendingStartSample > 0 ? this._pendingStartSample : this.Audio.PlaybackPositionSamples;
+            await this.Audio.InsertAudioAtAsync(item, insertIndex, !shiftFlag);
+            this.InitializeScrolling();
+        }
+
+        private async void removeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            await this.Audio.RemoveSelectionAsync();
+            this.InitializeScrolling();
+        }
+
+        private async void normalizeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string input = Microsoft.VisualBasic.Interaction.InputBox("Normalize amplitude (0..1):", "Normalize", "0.85");
+            if (string.IsNullOrWhiteSpace(input)) return;
+            input = input.Trim();
+            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var amp)) return;
+            amp = Math.Clamp(amp, 0f, 1f);
+            await this.Audio.NormalizeAsync(amp);
+            this.InitializeScrolling();
+        }
+
+        private async void fadeInToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string input = Microsoft.VisualBasic.Interaction.InputBox("Fade in to amplitude (0..1):", "Fade In", "0.0");
+            if (string.IsNullOrWhiteSpace(input)) return;
+            input = input.Trim();
+            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var target)) return;
+            target = Math.Clamp(target, 0f, 1f);
+            await this.Audio.FadeInAsync(target);
+            this.InitializeScrolling();
+        }
+
+        private async void fadeOutToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string input = Microsoft.VisualBasic.Interaction.InputBox("Fade out to amplitude (0..1):", "Fade Out", "0.0");
+            if (string.IsNullOrWhiteSpace(input)) return;
+            input = input.Trim();
+            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var target)) return;
+            target = Math.Clamp(target, 0f, 1f);
+            await this.Audio.FadeOutAsync(target);
+            this.InitializeScrolling();
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == (Keys.Control | Keys.C))
+            {
+                this.copyToolStripMenuItem_Click(this, EventArgs.Empty);
+                return true;
+            }
+            if (keyData == (Keys.Control | Keys.V))
+            {
+                this.PasteFromClipboardAsync().ConfigureAwait(false);
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void pictureBox_waveform_Click(object sender, EventArgs e)
+        {
+            // If right clicked, show context menu
+            if (MouseButtons.Right == Control.MouseButtons)
+            {
+                this.contextMenuStrip_waveform.Show(Cursor.Position);
+            }
+        }
+
+        private void drawBeatGridToolStripMenuItem_CheckStateChanged(object sender, EventArgs e)
+        {
+            // TODO: implement later
+        }
+
+        private void v1ToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // TODO: implement later
+        }
+
+        private void v2ToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // TODO: implement later
+        }
+
+        private void v3ToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // TODO: implement later
+        }
     }
 }

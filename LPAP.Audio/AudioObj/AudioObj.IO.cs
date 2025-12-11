@@ -141,6 +141,40 @@ namespace LPAP.Audio
             }, ct).ConfigureAwait(false);
         }
 
+        public AudioObj CopyFromSelection(long startSample, long endSample)
+        {
+            if (this.Data == null || this.Data.Length == 0)
+            {
+                throw new InvalidOperationException("No audio data to copy from.");
+            }
+            if (startSample < 0 || endSample > this.Data.Length || startSample >= endSample)
+            {
+                throw new ArgumentOutOfRangeException("Invalid selection range.");
+            }
+
+            var copy = new AudioObj
+            {
+                SampleRate = this.SampleRate,
+                Channels = this.Channels,
+                BitDepth = this.BitDepth,
+                Name = this.Name + "_Copy"
+            };
+            
+            long length = endSample - startSample;
+            copy.Data = new float[length];
+            Array.Copy(this.Data, startSample, copy.Data, 0, length);
+            
+            return copy;
+        }
+
+        public async Task<AudioObj> CopyFromSelectionAsync(long startSample = 0, long endSample = 0, CancellationToken ct = default)
+        {
+            return await Task.Run(() =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return this.CopyFromSelection(startSample, endSample);
+            }, ct).ConfigureAwait(false);
+        }
 
 
 
