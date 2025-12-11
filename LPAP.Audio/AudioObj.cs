@@ -354,11 +354,17 @@ namespace LPAP.Audio
                 for (long i = s0; i < s1; i++)
                 {
                     float a = Math.Abs(this.Data[i]);
-                    if (a > maxAbs) maxAbs = a;
-                }
-                if (maxAbs <= 0f) return;
+                    if (a > maxAbs)
+					{
+						maxAbs = a;
+					}
+				}
+                if (maxAbs <= 0f)
+				{
+					return;
+				}
 
-                float scale = targetAmplitude / maxAbs;
+				float scale = targetAmplitude / maxAbs;
                 for (long i = s0; i < s1; i++)
                 {
                     this.Data[i] *= scale;

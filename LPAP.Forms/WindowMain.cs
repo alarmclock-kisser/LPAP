@@ -1,6 +1,7 @@
 using LPAP.Audio;
 using LPAP.Forms.Views;
 using System.ComponentModel;
+using Timer = System.Windows.Forms.Timer;
 
 namespace LPAP.Forms
 {
@@ -22,7 +23,8 @@ namespace LPAP.Forms
             this.InitializeComponent();
             WindowsScreenHelper.SetWindowScreenPosition(this, [AnchorStyles.Right, AnchorStyles.Top]);
 
-
+            // initialize statistics monitoring and assign mandatory attribute
+            this._statisticsTimer = this.InitializeStatisticsTimer();
         }
 
 

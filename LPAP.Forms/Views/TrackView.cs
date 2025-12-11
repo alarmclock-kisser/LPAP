@@ -834,10 +834,18 @@ namespace LPAP.Forms.Views
         private async void normalizeToolStripMenuItem_Click(object sender, EventArgs e)
         {
             string input = Microsoft.VisualBasic.Interaction.InputBox("Normalize amplitude (0..1):", "Normalize", "0.85");
-            if (string.IsNullOrWhiteSpace(input)) return;
-            input = input.Trim();
-            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var amp)) return;
-            amp = Math.Clamp(amp, 0f, 1f);
+            if (string.IsNullOrWhiteSpace(input))
+			{
+				return;
+			}
+
+			input = input.Trim();
+            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var amp))
+			{
+				return;
+			}
+
+			amp = Math.Clamp(amp, 0f, 1f);
             await this.Audio.NormalizeAsync(amp);
             this.InitializeScrolling();
         }
@@ -845,10 +853,18 @@ namespace LPAP.Forms.Views
         private async void fadeInToolStripMenuItem_Click(object sender, EventArgs e)
         {
             string input = Microsoft.VisualBasic.Interaction.InputBox("Fade in to amplitude (0..1):", "Fade In", "0.0");
-            if (string.IsNullOrWhiteSpace(input)) return;
-            input = input.Trim();
-            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var target)) return;
-            target = Math.Clamp(target, 0f, 1f);
+            if (string.IsNullOrWhiteSpace(input))
+			{
+				return;
+			}
+
+			input = input.Trim();
+            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var target))
+			{
+				return;
+			}
+
+			target = Math.Clamp(target, 0f, 1f);
             await this.Audio.FadeInAsync(target);
             this.InitializeScrolling();
         }
@@ -856,10 +872,18 @@ namespace LPAP.Forms.Views
         private async void fadeOutToolStripMenuItem_Click(object sender, EventArgs e)
         {
             string input = Microsoft.VisualBasic.Interaction.InputBox("Fade out to amplitude (0..1):", "Fade Out", "0.0");
-            if (string.IsNullOrWhiteSpace(input)) return;
-            input = input.Trim();
-            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var target)) return;
-            target = Math.Clamp(target, 0f, 1f);
+            if (string.IsNullOrWhiteSpace(input))
+			{
+				return;
+			}
+
+			input = input.Trim();
+            if (!float.TryParse(input.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var target))
+			{
+				return;
+			}
+
+			target = Math.Clamp(target, 0f, 1f);
             await this.Audio.FadeOutAsync(target);
             this.InitializeScrolling();
         }
