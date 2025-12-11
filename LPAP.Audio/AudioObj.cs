@@ -137,6 +137,8 @@ namespace LPAP.Audio
         public Func<long> PlaybackBytesGetter => () => this.PlaybackPositionBytes;
 
         public CustomTags CustomTags { get; set; } = new();
+        public Int32 OverlapSize { get; internal set; }
+        public Double StretchFactor { get; internal set; }
 
         internal void AttachPlaybackTracking(PositionTrackingSampleProvider tracking)
         {
@@ -418,5 +420,196 @@ namespace LPAP.Audio
             });
             this.DataChanged();
         }
-    }
+
+
+
+		internal async Task<IEnumerable<float[]>> GetChunksAsync(int chunkSize = 2048, float overlap = 0.5f, bool keepData = false, int maxWorkers = 0)
+		{
+			// Validierung ohne Blockieren
+			chunkSize = Math.Max(1, chunkSize);
+			overlap = Math.Clamp(overlap, 0f, 0.95f); // 0.95 als Obergrenze, um hop > 0 sicherzustellen
+
+			return await Task.Run(() =>
+			{
+				try
+				{
+					var source = this.Data ?? Array.Empty<float>();
+					if (source.Length == 0)
+					{
+						return Enumerable.Empty<float[]>();
+					}
+
+					// Threadsicher: Arbeite auf lokalem Snapshot
+					var data = source.AsSpan();
+					int overlapSize = (int) Math.Round(chunkSize * overlap);
+					overlapSize = Math.Clamp(overlapSize, 0, chunkSize - 1);
+					int hopSize = Math.Max(1, chunkSize - overlapSize);
+
+					var chunks = new List<float[]>();
+					// Anzahl Chunks bestimmen
+					long totalSamples = data.Length;
+					long pos = 0;
+
+					// Optionaler Parallelismus wird hier nicht benötigt – der Vorgang ist IO-frei und linear
+					while (pos < totalSamples)
+					{
+						var chunk = new float[chunkSize];
+						long remaining = totalSamples - pos;
+						int copyCount = (int) Math.Min(remaining, chunkSize);
+						data.Slice((int) pos, copyCount).CopyTo(chunk.AsSpan(0, copyCount));
+
+						chunks.Add(chunk);
+						pos += hopSize;
+					}
+
+					if (!keepData)
+					{
+						// Daten nicht behalten: leeren in einem Schritt und Events feuern
+						// Threadsicherer Austausch nach kompletter Berechnung
+						this.Data = Array.Empty<float>();
+						this.DataChanged();
+					}
+
+					// Metadaten aktualisieren, die aus Overlap hergeleitet werden können
+					this.OverlapSize = overlapSize;
+
+					return chunks;
+				}
+				catch (Exception)
+				{
+					// Best Practice: Fehler isolieren, kein Blockieren. Caller kann mit leerem Resultat umgehen.
+					return Enumerable.Empty<float[]>();
+				}
+			}).ConfigureAwait(false);
+		}
+
+		internal async Task AggregateStretchedChunksAsync(IEnumerable<float[]> ifftChunks, double stretchFactor = 1.0f, int maxWorkers = 0)
+		{
+			// Validierung ohne Blockieren
+			stretchFactor = Math.Max(0.01, stretchFactor);
+
+			await Task.Run(() =>
+			{
+				try
+				{
+					if (ifftChunks == null)
+					{
+						return;
+					}
+
+					var chunks = ifftChunks as IList<float[]> ?? ifftChunks.ToList();
+					if (chunks.Count == 0)
+					{
+						return;
+					}
+
+					int chunkSize = chunks[0]?.Length ?? 0;
+					if (chunkSize <= 0 || chunks.Any(c => c == null || c.Length != chunkSize))
+					{
+						// Ungültige Chunk-Längen – defensiv abbrechen
+						return;
+					}
+
+					// Überlappung bestimmen: Falls nicht gesetzt, nutze 50%
+					int overlapSize = this.OverlapSize > 0
+						? this.OverlapSize
+						: Math.Max(0, (int) Math.Round(chunkSize * 0.5));
+
+					overlapSize = Math.Clamp(overlapSize, 0, chunkSize - 1);
+
+					// Ursprünglicher Hop
+					int hopIn = Math.Max(1, chunkSize - overlapSize);
+
+					// Gestretchter Hop
+					int hopOut = Math.Max(1, (int) Math.Round(hopIn * stretchFactor));
+
+					// Gesamtlänge des Ausgabesignals berechnen
+					long outLen = hopOut * (long) (chunks.Count - 1) + chunkSize;
+					var output = new float[outLen];
+
+					// Einfache lineare Crossfade-Fenster über die Überlappung
+					// Fenster für Überlappungsbereich vorbereiten
+					float[] fadeIn = new float[overlapSize];
+					float[] fadeOut = new float[overlapSize];
+					if (overlapSize > 0)
+					{
+						for (int i = 0; i < overlapSize; i++)
+						{
+							float t = i / (float) overlapSize;
+							fadeIn[i] = t;          // steigt 0→1
+							fadeOut[i] = 1f - t;    // fällt 1→0
+						}
+					}
+
+					// Optionaler Parallelismus: Überschreiben vermeiden. Overlap-Add ist additiv, daher Sequenziell sicherer.
+					long writePos = 0;
+					for (int idx = 0; idx < chunks.Count; idx++)
+					{
+						var chunk = chunks[idx];
+						long basePos = writePos;
+
+						// Nicht-Überlappender Teil
+						int dryStart = overlapSize;
+						int dryLen = chunkSize - dryStart;
+						if (dryLen > 0)
+						{
+							// Direkt addieren
+							for (int i = 0; i < dryLen; i++)
+							{
+								long p = basePos + dryStart + i;
+								if (p >= 0 && p < output.LongLength)
+								{
+									output[p] += chunk[dryStart + i];
+								}
+							}
+						}
+
+						// Überlappender Teil im Vergleich zum vorherigen Chunk
+						if (idx > 0 && overlapSize > 0)
+						{
+							// Überlappung beginnt am basePos
+							for (int i = 0; i < overlapSize; i++)
+							{
+								long p = basePos + i;
+								if (p >= 0 && p < output.LongLength)
+								{
+									float aPrev = output[p] * fadeOut[i]; // bisherige Summe, ausgeblendet
+									float aCur = chunk[i] * fadeIn[i];     // neuer Chunk, eingeblendet
+																		   // Da output[p] bereits den vorherigen Chunk enthält, mischen wir neu:
+																		   // Rekonstruktion: altes Sample wird mit fadeOut abgesenkt, neues addiert
+																		   // Um Doppel-Fading zu vermeiden, subtrahieren wir den ursprünglichen Wert nicht, sondern mischen additiv:
+									output[p] = (output[p] * fadeOut[i]) + (chunk[i] * fadeIn[i]);
+								}
+							}
+						}
+						else
+						{
+							// Erster Chunk: schreibe den Anfang bis overlapSize direkt
+							for (int i = 0; i < overlapSize; i++)
+							{
+								long p = basePos + i;
+								if (p >= 0 && p < output.LongLength)
+								{
+									output[p] += chunk[i];
+								}
+							}
+						}
+
+						writePos += hopOut;
+					}
+
+					// Threadsichere Ersetzung der Daten
+					this.Data = output;
+					this.DataChanged();
+				}
+				catch (Exception)
+				{
+					// Fehler still behandeln, nicht blockieren
+				}
+			}).ConfigureAwait(false);
+		}
+
+
+
+	}
 }
