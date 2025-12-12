@@ -52,7 +52,7 @@ namespace LPAP.Forms
 
                 // Use Win32 EnumDisplaySettings to get dmDisplayFrequency
                 var devMode = new DEVMODE();
-                devMode.dmSize = (short) Marshal.SizeOf(typeof(DEVMODE));
+                devMode.dmSize = (short) Marshal.SizeOf<DEVMODE>();
                 if (EnumDisplaySettings(targetScreen.DeviceName, ENUM_CURRENT_SETTINGS, ref devMode))
                 {
                     // Some drivers report 0; treat 0 as unknown -> null
