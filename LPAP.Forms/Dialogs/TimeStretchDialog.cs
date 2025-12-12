@@ -152,7 +152,7 @@ namespace LPAP.Forms.Dialogs
                                             progress: progress);
 
                     // await this.trackView.Audio.CreateUndoStepAsync();
-                    await this.trackView.Audio.
+                    // this.trackView.Audio = result;
                     this.progressBar_stretching.Value = this.progressBar_stretching.Maximum;
                     closeAfterSuccess = true;
                     this.SetProcessingState(false);
@@ -282,7 +282,7 @@ namespace LPAP.Forms.Dialogs
 
                 var perTrackProgress = new Progress<double>(p => ReportComposite(p));
 
-                await this.trackView.OriginalAudio.CreateUndoStepAsync();
+                // await this.trackView.Audio.CreateUndoStepAsync();
 
                 int? chunkSize = this.checkBox_autoChunking.Checked ? null : (int?)this.numericUpDown_chunkSize.Value;
                 float? overlap = this.checkBox_autoChunking.Checked ? null : (float?)this.numericUpDown_overlap.Value;
@@ -295,10 +295,10 @@ namespace LPAP.Forms.Dialogs
                     index = 0;
                     foreach (var t in this.Tracks)
                     {
-                        this.numericUpDown_initialBpm.Value = t.Bpm > 0 ? (decimal)t.Bpm : t.ScannedBpm > 30 ? (decimal)t.ScannedBpm : (decimal)LastInitialBpm;
+                        this.numericUpDown_initialBpm.Value = t.BeatsPerMinute > 0 ? (decimal)t.BeatsPerMinute : t.ScannedBeatsPerMinute > 30 ? (decimal)t.ScannedBeatsPerMinute : (decimal)LastInitialBpm;
 
                         // Process each track in-place with V2
-                        await TimeStretcher_V2.Timestretch_V2Async(
+                        /* await AudioProcessor.TimeStretch_V2(
                             t,
 							(double) this.numericUpDown_stretchFactor.Value < 0.5f ? 2 * (double) this.numericUpDown_stretchFactor.Value : (double) this.numericUpDown_stretchFactor.Value,
 							chunkSize,
@@ -307,7 +307,7 @@ namespace LPAP.Forms.Dialogs
                             this.ProcessingCancellationSource.Token);
 
                         results.Add(t);
-                        index++;
+                        index++;*/
                     }
 
                     this.Tracks = results;
@@ -322,15 +322,15 @@ namespace LPAP.Forms.Dialogs
                     // Single track: process, then apply to TrackView
                     var track = this.Tracks.First();
 
-                    await TimeStretcher_V2.Timestretch_V2Async(
+                   /* await TimeStretcher_V2.Timestretch_V2Async(
                         track,
 						(double) this.numericUpDown_stretchFactor.Value < 0.5f ? 2 * (double) this.numericUpDown_stretchFactor.Value : (double) this.numericUpDown_stretchFactor.Value,
 						chunkSize,
                         overlap,
                         perTrackProgress,
-                        this.ProcessingCancellationSource.Token);
+                        this.ProcessingCancellationSource.Token);*/
 
-                    await this.trackView.ApplyStretchedAudioAsync(track);
+                    // this.trackView = track;
                     this.progressBar_stretching.Value = this.progressBar_stretching.Maximum;
                     closeAfterSuccess = true;
                     this.SetProcessingState(false);
