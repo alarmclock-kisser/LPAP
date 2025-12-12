@@ -29,7 +29,6 @@
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            this.listBox_audios = new LPAP.Forms.Views.AudioListBox();
             this.contextMenuStrip_listBox = new ContextMenuStrip(this.components);
             this.openAsTrackToolStripMenuItem = new ToolStripMenuItem();
             this.renameToolStripMenuItem = new ToolStripMenuItem();
@@ -37,27 +36,17 @@
             this.addNumberingToolStripMenuItem = new ToolStripMenuItem();
             this.toolStripTextBox_format = new ToolStripTextBox();
             this.deleteToolStripMenuItem = new ToolStripMenuItem();
+            this.toolStripMenuItem1 = new ToolStripMenuItem();
+            this.wAVToolStripMenuItem = new ToolStripMenuItem();
+            this.mP3ToolStripMenuItem = new ToolStripMenuItem();
             this.contextMenuStrip_listBox.SuspendLayout();
             this.SuspendLayout();
             // 
-            // listBox_audios
-            // 
-            this.listBox_audios.ContextMenuStrip = this.contextMenuStrip_listBox;
-            this.listBox_audios.Dock = DockStyle.Fill;
-            this.listBox_audios.DrawMode = DrawMode.OwnerDrawFixed;
-            this.listBox_audios.FormattingEnabled = true;
-            this.listBox_audios.IntegralHeight = false;
-            this.listBox_audios.Location = new Point(0, 0);
-            this.listBox_audios.Name = "listBox_audios";
-            this.listBox_audios.SelectionMode = SelectionMode.MultiExtended;
-            this.listBox_audios.Size = new Size(224, 121);
-            this.listBox_audios.TabIndex = 0;
-            // 
             // contextMenuStrip_listBox
             // 
-            this.contextMenuStrip_listBox.Items.AddRange(new ToolStripItem[] { this.openAsTrackToolStripMenuItem, this.renameToolStripMenuItem, this.editTagsToolStripMenuItem, this.addNumberingToolStripMenuItem, this.deleteToolStripMenuItem });
+            this.contextMenuStrip_listBox.Items.AddRange(new ToolStripItem[] { this.openAsTrackToolStripMenuItem, this.renameToolStripMenuItem, this.editTagsToolStripMenuItem, this.addNumberingToolStripMenuItem, this.toolStripMenuItem1, this.deleteToolStripMenuItem });
             this.contextMenuStrip_listBox.Name = "contextMenuStrip_listBox";
-            this.contextMenuStrip_listBox.Size = new Size(181, 136);
+            this.contextMenuStrip_listBox.Size = new Size(181, 158);
             // 
             // openAsTrackToolStripMenuItem
             // 
@@ -103,12 +92,30 @@
             this.deleteToolStripMenuItem.Text = "Delete";
             this.deleteToolStripMenuItem.Click += this.deleteToolStripMenuItem_Click;
             // 
+            // toolStripMenuItem1
+            // 
+            this.toolStripMenuItem1.DropDownItems.AddRange(new ToolStripItem[] { this.wAVToolStripMenuItem, this.mP3ToolStripMenuItem });
+            this.toolStripMenuItem1.Name = "toolStripMenuItem1";
+            this.toolStripMenuItem1.Size = new Size(180, 22);
+            this.toolStripMenuItem1.Text = "Export";
+            // 
+            // wAVToolStripMenuItem
+            // 
+            this.wAVToolStripMenuItem.Name = "wAVToolStripMenuItem";
+            this.wAVToolStripMenuItem.Size = new Size(180, 22);
+            this.wAVToolStripMenuItem.Text = "WAV";
+            // 
+            // mP3ToolStripMenuItem
+            // 
+            this.mP3ToolStripMenuItem.Name = "mP3ToolStripMenuItem";
+            this.mP3ToolStripMenuItem.Size = new Size(180, 22);
+            this.mP3ToolStripMenuItem.Text = "MP3";
+            // 
             // AudioCollectionView
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(224, 121);
-            this.Controls.Add(this.listBox_audios);
             this.MaximizeBox = false;
             this.Name = "AudioCollectionView";
             this.Text = "AudioCollectionView";
@@ -126,5 +133,8 @@
         private ToolStripMenuItem addNumberingToolStripMenuItem;
         private ToolStripTextBox toolStripTextBox_format;
         private ToolStripMenuItem deleteToolStripMenuItem;
+        private ToolStripMenuItem toolStripMenuItem1;
+        private ToolStripMenuItem wAVToolStripMenuItem;
+        private ToolStripMenuItem mP3ToolStripMenuItem;
     }
 }

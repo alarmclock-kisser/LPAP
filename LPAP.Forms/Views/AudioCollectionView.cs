@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using Microsoft.VisualBasic;
 using LPAP.Audio;
 using LPAP.Forms.Dialogs;
+using Microsoft.VisualBasic.FileIO;
 
 namespace LPAP.Forms.Views
 {
@@ -807,7 +808,42 @@ namespace LPAP.Forms.Views
             }
         }
 
-    }
+        private async void exportToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var selected = this.GetSelectedAudioItems();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+			// Get sender as ToolStripMenuItem to find parent ContextMenuStripItem like Export -> WAV -> 24 bit
+            if (sender is not ToolStripMenuItem menuItem)
+            {
+                return;
+			}
+            string? format = menuItem.Tag as string;
+            int? bits = menuItem.Name?.Split("_").LastOrDefault() is string bitsStr && int.TryParse(bitsStr, out int b) ? b : null;
+            if (bits == null || string.IsNullOrWhiteSpace(format))
+			{
+                return;
+            }
+
+			var exportTasks = new List<Task>();
+            if ((format?.ToLowerInvariant() ?? "").Contains("3"))
+            {
+                exportTasks.AddRange(selected.Select(audio => audio.ExportMp3Async(Path.Combine(SpecialDirectories.MyMusic, "LPAP_Export"), bits.Value)));
+			}
+            else
+            {
+                exportTasks.AddRange(selected.Select(audio => audio.ExportWavAsync(Path.Combine(SpecialDirectories.MyMusic, "LPAP_Export"), bits.Value)));
+			}
+
+            await Task.WhenAll(exportTasks);
+		}
+	}
+
+
+	}
 
 
 
@@ -840,4 +876,4 @@ namespace LPAP.Forms.Views
             base.OnMouseDown(e);
         }
     }
-}
+

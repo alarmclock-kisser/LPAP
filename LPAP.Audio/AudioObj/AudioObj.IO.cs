@@ -178,30 +178,147 @@ namespace LPAP.Audio
 
 
 
-        // WAV-Export (16-bit PCM)
-        public async Task ExportWavAsync(string outputPath, CancellationToken ct = default)
-        {
-            if (this.Data == null || this.Data.Length == 0)
-            {
-                throw new InvalidOperationException("No audio data to export.");
-            }
+		// WAV-Export (16-bit PCM)
+		public async Task ExportWavAsync(string outputPath, int bits = 24, CancellationToken ct = default)
+		{
+			if (this.Data == null || this.Data.Length == 0)
+			{
+				throw new InvalidOperationException("No audio data to export.");
+			}
 
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
+			Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
 
-            await Task.Run(() =>
-            {
-                ct.ThrowIfCancellationRequested();
+			// Unterstützt: 8, 16, 24, 32 (bei 32 wird IEEE Float geschrieben)
+			bits = bits switch
+			{
+				8 => 8,
+				16 => 16,
+				24 => 24,
+				32 => 32,
+				_ => 24
+			};
 
-                var format = WaveFormat.CreateIeeeFloatWaveFormat(this.SampleRate, this.Channels);
-                var rawProvider = new ArraySampleProvider(this.Data, format);
-                var sampleToWave = new SampleToWaveProvider16(rawProvider);
+			await Task.Run(() =>
+			{
+				try
+				{
+					ct.ThrowIfCancellationRequested();
 
-                WaveFileWriter.CreateWaveFile(outputPath, sampleToWave);
-            }, ct).ConfigureAwait(false);
-        }
+					var channels = Math.Max(1, this.Channels);
+					var sampleRate = Math.Max(8000, this.SampleRate);
+					var src = this.Data; // Snapshot
 
-        // MP3-Export mit LAME
-        public async Task ExportMp3Async(string outputPath, int bitrateKbps = 192, CancellationToken ct = default)
+					if (bits == 32)
+					{
+						// 32-bit IEEE Float WAV (direkt schreiben, da Daten bereits float sind)
+						var format = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
+						using var writer = new WaveFileWriter(outputPath, format);
+
+						// In Bytes umwandeln
+						var buffer = new byte[src.Length * sizeof(float)];
+						Buffer.BlockCopy(src, 0, buffer, 0, buffer.Length);
+
+						// Schreiben mit Rücksicht auf Cancellation
+						const int chunk = 64 * 1024;
+						int offset = 0;
+						while (offset < buffer.Length)
+						{
+							ct.ThrowIfCancellationRequested();
+							int count = Math.Min(chunk, buffer.Length - offset);
+							writer.Write(buffer, offset, count);
+							offset += count;
+						}
+						return;
+					}
+
+					// Integer PCM für 8/16/24 Bit
+					var intPcmFormat = new WaveFormat(sampleRate, bits, channels);
+					using var intWriter = new WaveFileWriter(outputPath, intPcmFormat);
+
+					// Interleaving wird vorausgesetzt: Data enthält bereits alle Kanäle (float -1..+1)
+					// Konvertierung abhängig von Ziel-Bittiefe
+					const int framesChunk = 64 * 1024; // Anzahl Samples (Mono-Samples) pro Chunk
+					int totalSamples = src.Length;
+					int sampleIndex = 0;
+
+					if (bits == 8)
+					{
+						// 8-bit PCM: unsigned (0..255), 128 = 0.0
+						var byteBuf = new byte[Math.Min(framesChunk, totalSamples)];
+						while (sampleIndex < totalSamples)
+						{
+							ct.ThrowIfCancellationRequested();
+							int count = Math.Min(byteBuf.Length, totalSamples - sampleIndex);
+							for (int i = 0; i < count; i++)
+							{
+								// Clamp und Map
+								float f = MathF.Max(-1f, MathF.Min(1f, src[sampleIndex + i]));
+								// Skala -1..1 -> 0..255
+								int u = (int) MathF.Round((f * 0.5f + 0.5f) * 255f);
+								byteBuf[i] = (byte) Math.Clamp(u, 0, 255);
+							}
+							intWriter.Write(byteBuf, 0, count);
+							sampleIndex += count;
+						}
+					}
+					else if (bits == 16)
+					{
+						// 16-bit PCM: signed little-endian
+						var byteBuf = new byte[Math.Min(framesChunk, totalSamples) * 2];
+						while (sampleIndex < totalSamples)
+						{
+							ct.ThrowIfCancellationRequested();
+							int samplesThis = Math.Min(framesChunk, totalSamples - sampleIndex);
+							int outOfs = 0;
+							for (int i = 0; i < samplesThis; i++)
+							{
+								float f = MathF.Max(-1f, MathF.Min(1f, src[sampleIndex + i]));
+								short s = (short) Math.Clamp((int) MathF.Round(f * short.MaxValue), short.MinValue, short.MaxValue);
+								byteBuf[outOfs++] = (byte) (s & 0xFF);
+								byteBuf[outOfs++] = (byte) ((s >> 8) & 0xFF);
+							}
+							intWriter.Write(byteBuf, 0, outOfs);
+							sampleIndex += samplesThis;
+						}
+					}
+					else // 24-bit
+					{
+						// 24-bit PCM: signed little-endian (3 Bytes pro Sample)
+						var byteBuf = new byte[Math.Min(framesChunk, totalSamples) * 3];
+						while (sampleIndex < totalSamples)
+						{
+							ct.ThrowIfCancellationRequested();
+							int samplesThis = Math.Min(framesChunk, totalSamples - sampleIndex);
+							int outOfs = 0;
+							for (int i = 0; i < samplesThis; i++)
+							{
+								float f = MathF.Max(-1f, MathF.Min(1f, src[sampleIndex + i]));
+								// Skala auf 24-bit Range
+								int s = (int) Math.Clamp(MathF.Round(f * 8388607f), -8388608f, 8388607f); // 2^23-1
+																										  // Little-Endian 3 Bytes
+								byteBuf[outOfs++] = (byte) (s & 0xFF);
+								byteBuf[outOfs++] = (byte) ((s >> 8) & 0xFF);
+								byteBuf[outOfs++] = (byte) ((s >> 16) & 0xFF);
+							}
+							intWriter.Write(byteBuf, 0, outOfs);
+							sampleIndex += samplesThis;
+						}
+					}
+				}
+				catch (OperationCanceledException)
+				{
+					// still und nicht-blockierend: Export abgebrochen
+				}
+				catch
+				{
+					// still und nicht-blockierend: Fehler beim Export
+					// Optional: Logging/Telemetry hier einfügen
+				}
+			}).ConfigureAwait(false);
+		}
+
+		// MP3-Export mit LAME
+		public async Task ExportMp3Async(string outputPath, int bitrateKbps = 192, CancellationToken ct = default)
         {
             if (this.Data == null || this.Data.Length == 0)
             {
