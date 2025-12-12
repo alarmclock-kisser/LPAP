@@ -12,8 +12,8 @@ using System.Threading.Tasks;
 
 namespace LPAP.Audio.Processing
 {
-    public static class TimeStretcher
-    {
+    public static partial class AudioProcessor
+	{
         public static async Task<AudioObj> TimeStretchParallelAsync(
     AudioObj obj,
     int chunkSize = 16384,
@@ -264,7 +264,7 @@ namespace LPAP.Audio.Processing
     float normalize,
     int maxWorkers,
     IProgress<double>? progress,
-    bool adjustBpm)
+    bool adjustBeatsPerMinute)
         {
             float[] backupData = obj.Data;
             int sampleRate = obj.SampleRate;
@@ -339,9 +339,9 @@ namespace LPAP.Audio.Processing
                 }
 
                 obj.StretchFactor = factor;
-                if (adjustBpm && obj.Bpm > 0f)
+                if (adjustBeatsPerMinute && obj.BeatsPerMinute > 0f)
                 {
-                    obj.Bpm = (float) (obj.Bpm / factor);
+                    obj.BeatsPerMinute = (float) (obj.BeatsPerMinute / factor);
                 }
 
                 const int batchSize = 8;

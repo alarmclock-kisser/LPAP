@@ -121,9 +121,80 @@ namespace LPAP.Forms
             }
         }
 
+		internal static Point GetCenterStartingPoint(Form? form = null, int? screenId = null)
+		{
+			if (form != null)
+			{
+				screenId = Array.IndexOf(Screen.AllScreens, Screen.FromControl(form));
+			}
+
+			screenId ??= Screen.PrimaryScreen != null
+				? Array.IndexOf(Screen.AllScreens, Screen.PrimaryScreen)
+				: 0;
+
+			Screen screen;
+			if (screenId.HasValue)
+			{
+				Screen[] allScreens = Screen.AllScreens;
+				if (screenId.Value >= 0 && screenId.Value < allScreens.Length)
+				{
+					screen = allScreens[screenId.Value];
+				}
+				else
+				{
+					screen = Screen.PrimaryScreen ?? allScreens.FirstOrDefault() ?? throw new InvalidOperationException("Kein Bildschirm gefunden.");
+				}
+			}
+			else
+			{
+				screen = Screen.PrimaryScreen ?? Screen.AllScreens.FirstOrDefault() ?? throw new InvalidOperationException("Kein Bildschirm gefunden.");
+			}
+
+			int x = screen.WorkingArea.X + (screen.WorkingArea.Width - (form?.Width ?? 0)) / 2;
+			int y = screen.WorkingArea.Y + (screen.WorkingArea.Height - (form?.Height ?? 0)) / 2;
+			return new Point(x, y);
+		}
+
+		internal static Point GetCornerPosition(Form? form = null, bool left = true, bool top = true, int? screenId = null)
+		{
+			// Calculate starting position based on screen working area and formif given
+			if (form != null)
+			{
+				screenId = Array.IndexOf(Screen.AllScreens, Screen.FromControl(form));
+			}
+
+			screenId ??= Screen.PrimaryScreen != null
+				? Array.IndexOf(Screen.AllScreens, Screen.PrimaryScreen)
+				: 0;
+			Screen screen;
+			if (screenId.HasValue)
+			{
+				Screen[] allScreens = Screen.AllScreens;
+				if (screenId.Value >= 0 && screenId.Value < allScreens.Length)
+				{
+					screen = allScreens[screenId.Value];
+				}
+				else
+				{
+					screen = Screen.PrimaryScreen ?? allScreens.FirstOrDefault() ?? throw new InvalidOperationException("Kein Bildschirm gefunden.");
+				}
+			}
+			else
+			{
+				screen = Screen.PrimaryScreen ?? Screen.AllScreens.FirstOrDefault() ?? throw new InvalidOperationException("Kein Bildschirm gefunden.");
+			}
+			int x = left
+				? screen.WorkingArea.X
+				: screen.WorkingArea.X + screen.WorkingArea.Width - (form?.Width ?? 0);
+			int y = top
+				? screen.WorkingArea.Y
+				: screen.WorkingArea.Y + screen.WorkingArea.Height - (form?.Height ?? 0);
+			return new Point(x, y);
+		}
 
 
-        private const int ENUM_CURRENT_SETTINGS = -1;
+
+		private const int ENUM_CURRENT_SETTINGS = -1;
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
         private struct DEVMODE

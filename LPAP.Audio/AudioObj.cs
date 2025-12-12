@@ -139,6 +139,7 @@ namespace LPAP.Audio
         public CustomTags CustomTags { get; set; } = new();
         public Int32 OverlapSize { get; internal set; }
         public Double StretchFactor { get; internal set; }
+        public Int32 ScannedBeatsPerMinute { get; set; }
 
         internal void AttachPlaybackTracking(PositionTrackingSampleProvider tracking)
         {
