@@ -6,427 +6,444 @@ using System.Threading.Tasks;
 
 namespace LPAP.Audio
 {
-    public enum PlaybackState
-    {
-        Stopped,
-        Playing,
-        Paused
-    }
+	public enum PlaybackState
+	{
+		Stopped,
+		Playing,
+		Paused
+	}
 
-    public partial class AudioObj : INotifyPropertyChanged, IDisposable
-    {
-        public Guid Id { get; } = Guid.NewGuid();
+	public partial class AudioObj : INotifyPropertyChanged, IDisposable
+	{
+		public Guid Id { get; } = Guid.NewGuid();
 
-        public string Name { get; set; } = string.Empty;
-        public string? FilePath { get; private set; }
+		public string Name { get; set; } = string.Empty;
+		public string? FilePath { get; private set; }
 
-        public float[] Data { get; internal set; } = [];
-        public int SampleRate { get; internal set; }
-        public int Channels { get; internal set; }
-        public int BitDepth { get; internal set; }
-        public long StartingSample { get; set; }
+		public float[] Data { get; internal set; } = [];
+		public int SampleRate { get; internal set; }
+		public int Channels { get; internal set; }
+		public int BitDepth { get; internal set; }
+		public long StartingSample { get; set; }
 
-        public long LengthSamples => this.Data?.LongLength ?? 0;
-        public TimeSpan Duration => this.SampleRate > 0 && this.Channels > 0
-            ? TimeSpan.FromSeconds(this.LengthSamples / (double) (this.SampleRate * this.Channels))
-            : TimeSpan.Zero;
+		public long LengthSamples => this.Data?.LongLength ?? 0;
+		public TimeSpan Duration => this.SampleRate > 0 && this.Channels > 0
+			? TimeSpan.FromSeconds(this.LengthSamples / (double) (this.SampleRate * this.Channels))
+			: TimeSpan.Zero;
 
-        public PlaybackState PlaybackState { get; internal set; } = PlaybackState.Stopped;
-        public TimeSpan CurrentPlaybackTimestamp => (this.SampleRate > 0 && this.Channels > 0)
-        ? TimeSpan.FromSeconds(this.PlaybackPositionSamples / (double) (this.SampleRate * this.Channels))
-        : TimeSpan.Zero;
+		public PlaybackState PlaybackState { get; internal set; } = PlaybackState.Stopped;
+		public TimeSpan CurrentPlaybackTimestamp => (this.SampleRate > 0 && this.Channels > 0)
+		? TimeSpan.FromSeconds(this.PlaybackPositionSamples / (double) (this.SampleRate * this.Channels))
+		: TimeSpan.Zero;
 
-        // --- Selection ---
-        private long _selectionStart;
-        private long _selectionEnd;
-        public long SelectionStart
-        {
-            get => this._selectionStart;
-            set
-            {
-                long v = Math.Max(0, value);
-                if (v == this._selectionStart)
-                {
-                    return;
-                }
+		// --- Selection ---
+		private long _selectionStart;
+		private long _selectionEnd;
+		public long SelectionStart
+		{
+			get => this._selectionStart;
+			set
+			{
+				long v = Math.Max(0, value);
+				if (v == this._selectionStart)
+				{
+					return;
+				}
 
-                this._selectionStart = v;
-                this.OnPropertyChanged(nameof(this.SelectionStart));
-            }
-        }
-        public long SelectionEnd
-        {
-            get => this._selectionEnd;
-            set
-            {
-                long v = Math.Max(0, value);
-                if (v == this._selectionEnd)
-                {
-                    return;
-                }
+				this._selectionStart = v;
+				this.OnPropertyChanged(nameof(this.SelectionStart));
+			}
+		}
+		public long SelectionEnd
+		{
+			get => this._selectionEnd;
+			set
+			{
+				long v = Math.Max(0, value);
+				if (v == this._selectionEnd)
+				{
+					return;
+				}
 
-                this._selectionEnd = v;
-                this.OnPropertyChanged(nameof(this.SelectionEnd));
-            }
-        }
+				this._selectionEnd = v;
+				this.OnPropertyChanged(nameof(this.SelectionEnd));
+			}
+		}
 
-        private float _volume = 1.0f;
-        public float Volume
-        {
-            get => this._volume;
-            set
-            {
-                var v = Math.Clamp(value, 0f, 1f);
-                if (Math.Abs(v - this._volume) < 0.0001f)
-                {
-                    return;
-                }
+		private float _volume = 1.0f;
+		public float Volume
+		{
+			get => this._volume;
+			set
+			{
+				var v = Math.Clamp(value, 0f, 1f);
+				if (Math.Abs(v - this._volume) < 0.0001f)
+				{
+					return;
+				}
 
-                this._volume = v;
-                this.OnPropertyChanged(nameof(this.Volume));
+				this._volume = v;
+				this.OnPropertyChanged(nameof(this.Volume));
 
-                // Wenn gerade abgespielt wird, an Engine weitergeben
-                AudioPlaybackEngine.Instance.SetVolume(this, v);
-            }
-        }
-
-
-        public double BeatsPerMinute { get; set; } = 0.0;
-        public int SamplesPerBeat
-        {
-            get
-            {
-                if (this.SampleRate <= 0 || this.Channels <= 0)
-                {
-                    return 0;
-                }
-
-                double bpm = this.BeatsPerMinute;
-                if (bpm <= 0.0001)
-                {
-                    bpm = 60.0; // Fallback: 60 BPM
-                }
-
-                double secondsPerBeat = 60.0 / bpm;
-                double samplesPerBeat = secondsPerBeat * this.SampleRate * this.Channels;
-
-                return (int) Math.Round(samplesPerBeat);
-            }
-        }
-
-        public string InitialKey { get; set; } = "C";
-
-        public event PropertyChangedEventHandler? PropertyChanged;
+				// Wenn gerade abgespielt wird, an Engine weitergeben
+				AudioPlaybackEngine.Instance.SetVolume(this, v);
+			}
+		}
 
 
+		public double BeatsPerMinute { get; set; } = 0.0;
+		public int SamplesPerBeat
+		{
+			get
+			{
+				if (this.SampleRate <= 0 || this.Channels <= 0)
+				{
+					return 0;
+				}
 
-        // --- Playback-Status-Output ---
+				double bpm = this.BeatsPerMinute;
+				if (bpm <= 0.0001)
+				{
+					bpm = 60.0; // Fallback: 60 BPM
+				}
 
-        internal PositionTrackingSampleProvider? PlaybackTracking { get; private set; }
+				double secondsPerBeat = 60.0 / bpm;
+				double samplesPerBeat = secondsPerBeat * this.SampleRate * this.Channels;
 
-        public long PlaybackPositionSamples =>
-            this.PlaybackTracking?.SamplesRead ?? 0;
+				return (int) Math.Round(samplesPerBeat);
+			}
+		}
 
-        public long PlaybackPositionBytes =>
-            this.PlaybackPositionSamples * (this.BitDepth / 8);
+		public string InitialKey { get; set; } = "C";
 
-        public Func<PlaybackState> PlaybackStateGetter => () => this.PlaybackState;
+		public event PropertyChangedEventHandler? PropertyChanged;
 
-        public Func<long> PlaybackSamplesGetter => () => this.PlaybackPositionSamples;
 
-        public Func<long> PlaybackBytesGetter => () => this.PlaybackPositionBytes;
 
-        public CustomTags CustomTags { get; set; } = new();
-        public Int32 OverlapSize { get; internal set; }
-        public Double StretchFactor { get; internal set; }
-        public Int32 ScannedBeatsPerMinute { get; set; }
+		// --- Playback-Status-Output ---
 
-        internal void AttachPlaybackTracking(PositionTrackingSampleProvider tracking)
-        {
-            this.PlaybackTracking = tracking;
-            this.PlaybackState = PlaybackState.Playing;
-            this.OnPropertyChanged(nameof(this.PlaybackState));
-        }
+		internal PositionTrackingSampleProvider? PlaybackTracking { get; private set; }
 
-        internal void DetachPlaybackTracking(PositionTrackingSampleProvider tracking)
-        {
-            if (this.PlaybackTracking == tracking)
-            {
-                this.PlaybackTracking = null;
-                this.PlaybackState = PlaybackState.Stopped;
-                this.OnPropertyChanged(nameof(this.PlaybackState));
-            }
-        }
+		public long PlaybackPositionSamples =>
+			this.PlaybackTracking?.SamplesRead ?? 0;
 
-        protected void OnPropertyChanged(string propertyName)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
+		public long PlaybackPositionBytes =>
+			this.PlaybackPositionSamples * (this.BitDepth / 8);
 
-        public void DataChanged()
-        {
-            this.OnPropertyChanged(nameof(this.Data));
-            this.OnPropertyChanged(nameof(this.LengthSamples));
-            this.OnPropertyChanged(nameof(this.Duration));
-        }
+		public Func<PlaybackState> PlaybackStateGetter => () => this.PlaybackState;
 
-        internal void SetPlaybackState(PlaybackState state)
-        {
-            if (this.PlaybackState != state)
-            {
-                this.PlaybackState = state;
-                this.OnPropertyChanged(nameof(this.PlaybackState));
-            }
-        }
+		public Func<long> PlaybackSamplesGetter => () => this.PlaybackPositionSamples;
 
-        public void Dispose()
-        {
-            AudioPlaybackEngine.Instance.Stop(this);
-        }
+		public Func<long> PlaybackBytesGetter => () => this.PlaybackPositionBytes;
 
-        // --- Editing operations ---
-        public async Task<AudioObj> CopyFromSelectionAsync(long selectionStart, long selectionEnd)
-        {
-            return await Task.Run(() =>
-            {
-                long s0 = Math.Max(0, Math.Min(selectionStart, selectionEnd));
-                long s1 = Math.Max(0, Math.Max(selectionStart, selectionEnd));
-                s0 = Math.Min(s0, this.LengthSamples);
-                s1 = Math.Min(s1, this.LengthSamples);
-                long len = Math.Max(0, s1 - s0);
+		public CustomTags CustomTags { get; set; } = new();
+		public Int32 OverlapSize { get; internal set; }
+		public Double StretchFactor { get; internal set; }
+		public Int32 ScannedBeatsPerMinute { get; set; }
 
-                var copy = new AudioObj
-                {
-                    Name = this.Name + " (copy)",
-                    SampleRate = this.SampleRate,
-                    Channels = this.Channels,
-                    BitDepth = this.BitDepth,
-                    Data = len > 0 ? new float[len] : Array.Empty<float>()
-                };
+		internal void AttachPlaybackTracking(PositionTrackingSampleProvider tracking)
+		{
+			this.PlaybackTracking = tracking;
+			this.PlaybackState = PlaybackState.Playing;
+			this.OnPropertyChanged(nameof(this.PlaybackState));
+		}
 
-                if (len > 0)
-                {
-                    Array.Copy(this.Data, s0, copy.Data, 0, len);
-                }
+		internal void DetachPlaybackTracking(PositionTrackingSampleProvider tracking)
+		{
+			if (this.PlaybackTracking == tracking)
+			{
+				this.PlaybackTracking = null;
+				this.PlaybackState = PlaybackState.Stopped;
+				this.OnPropertyChanged(nameof(this.PlaybackState));
+			}
+		}
 
-                copy.DataChanged();
-                return copy;
-            });
-        }
+		protected void OnPropertyChanged(string propertyName)
+		{
+			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+		}
 
-        public async Task RemoveSelectionAsync(long? selectionStart = null, long? selectionEnd = null)
-        {
-            await Task.Run(() =>
-            {
-                long s0 = selectionStart ?? this.SelectionStart;
-                long s1 = selectionEnd ?? this.SelectionEnd;
-                s0 = Math.Max(0, Math.Min(s0, s1));
-                s1 = Math.Max(0, Math.Max(s0, s1));
-                s0 = Math.Min(s0, this.LengthSamples);
-                s1 = Math.Min(s1, this.LengthSamples);
-                long removeLen = Math.Max(0, s1 - s0);
-                if (removeLen <= 0 || this.Data.Length == 0)
-                {
-                    return;
-                }
+		public void DataChanged()
+		{
+			this.OnPropertyChanged(nameof(this.Data));
+			this.OnPropertyChanged(nameof(this.LengthSamples));
+			this.OnPropertyChanged(nameof(this.Duration));
+		}
 
-                long newLen = this.LengthSamples - removeLen;
-                var newData = new float[newLen];
-                // copy before selection
-                if (s0 > 0)
-                {
-                    Array.Copy(this.Data, 0, newData, 0, s0);
-                }
-                // copy after selection
-                long tailLen = this.LengthSamples - s1;
-                if (tailLen > 0)
-                {
-                    Array.Copy(this.Data, s1, newData, s0, tailLen);
-                }
+		internal void SetPlaybackState(PlaybackState state)
+		{
+			if (this.PlaybackState != state)
+			{
+				this.PlaybackState = state;
+				this.OnPropertyChanged(nameof(this.PlaybackState));
+			}
+		}
 
-                this.Data = newData;
-                this.SelectionStart = 0;
-                this.SelectionEnd = 0;
-                this.DataChanged();
-            });
-        }
+		public void Dispose()
+		{
+			AudioPlaybackEngine.Instance.Stop(this);
+			GC.SuppressFinalize(this);
+		}
 
-        public async Task InsertAudioAtAsync(AudioObj insertItem, long insertIndex = 0, bool mixInsteadOfInsert = false)
-        {
-            if (insertItem == null || insertItem.Data == null || insertItem.Data.Length == 0)
-            {
-                return;
-            }
+		// --- Editing operations ---
+		public async Task<AudioObj> CopyFromSelectionAsync(long selectionStart, long selectionEnd)
+		{
+			return await Task.Run(() =>
+			{
+				long s0 = Math.Max(0, Math.Min(selectionStart, selectionEnd));
+				long s1 = Math.Max(0, Math.Max(selectionStart, selectionEnd));
+				s0 = Math.Min(s0, this.LengthSamples);
+				s1 = Math.Min(s1, this.LengthSamples);
+				long len = Math.Max(0, s1 - s0);
 
-            if (mixInsteadOfInsert)
-            {
-                await Task.Run(() =>
-                {
-                    long idx = Math.Clamp(insertIndex, 0, this.LengthSamples);
-                    long mixLen = Math.Min(insertItem.LengthSamples, this.LengthSamples - idx);
-                    for (long i = 0; i < mixLen; i++)
-                    {
-                        this.Data[idx + i] += insertItem.Data[i];
-                    }
-                    this.DataChanged();
-                });
-                return;
-            }
+				var copy = new AudioObj
+				{
+					Name = this.Name + " (copy)",
+					SampleRate = this.SampleRate,
+					Channels = this.Channels,
+					BitDepth = this.BitDepth,
+					Data = len > 0 ? new float[len] : []
+				};
 
-            await Task.Run(() =>
-            {
-                long idx = Math.Clamp(insertIndex, 0, this.LengthSamples);
-                long newLen = this.LengthSamples + insertItem.LengthSamples;
-                var newData = new float[newLen];
-                // copy head
-                if (idx > 0)
-                {
-                    Array.Copy(this.Data, 0, newData, 0, idx);
-                }
-                // copy insert
-                Array.Copy(insertItem.Data, 0, newData, idx, insertItem.LengthSamples);
-                // copy tail
-                long tailLen = this.LengthSamples - idx;
-                if (tailLen > 0)
-                {
-                    Array.Copy(this.Data, idx, newData, idx + insertItem.LengthSamples, tailLen);
-                }
+				if (len > 0)
+				{
+					Array.Copy(this.Data, s0, copy.Data, 0, len);
+				}
 
-                this.Data = newData;
-                this.DataChanged();
-            });
-        }
+				copy.DataChanged();
+				return copy;
+			});
+		}
 
-        public async Task ConcatSelfAsync(bool useSelection = false, int iterations = 1)
-        {
-            iterations = Math.Max(1, iterations);
-            await Task.Run(() =>
-            {
-                long s0 = 0;
-                long s1 = this.LengthSamples;
-                if (useSelection)
-                {
-                    s0 = Math.Max(0, Math.Min(this.SelectionStart, this.SelectionEnd));
-                    s1 = Math.Max(0, Math.Max(this.SelectionStart, this.SelectionEnd));
-                    s0 = Math.Min(s0, this.LengthSamples);
-                    s1 = Math.Min(s1, this.LengthSamples);
-                }
+		public async Task RemoveSelectionAsync(long? selectionStart = null, long? selectionEnd = null)
+		{
+			await Task.Run(() =>
+			{
+				long s0 = selectionStart ?? this.SelectionStart;
+				long s1 = selectionEnd ?? this.SelectionEnd;
+				if (s1 < s0)
+				{
+					(s0, s1) = (s1, s0);
+				}
 
-                long segmentLen = Math.Max(0, s1 - s0);
-                if (segmentLen <= 0)
-                {
-                    return;
-                }
+				s0 = Math.Max(0, Math.Min(s0, s1));
+				s1 = Math.Max(0, Math.Max(s0, s1));
+				s0 = Math.Min(s0, this.LengthSamples);
+				s1 = Math.Min(s1, this.LengthSamples);
+				long removeLen = Math.Max(0, s1 - s0);
+				if (removeLen <= 0 || this.Data.Length == 0)
+				{
+					return;
+				}
 
-                long newLen = this.LengthSamples + segmentLen * iterations;
-                var newData = new float[newLen];
+				long newLen = this.LengthSamples - removeLen;
+				var newData = new float[newLen];
+				// copy before selection
+				if (s0 > 0)
+				{
+					Array.Copy(this.Data, 0, newData, 0, s0);
+				}
+				// copy after selection
+				long tailLen = this.LengthSamples - s1;
+				if (tailLen > 0)
+				{
+					Array.Copy(this.Data, s1, newData, s0, tailLen);
+				}
 
-                // original
-                Array.Copy(this.Data, 0, newData, 0, this.LengthSamples);
+				this.Data = newData;
+				this.SelectionStart = 0;
+				this.SelectionEnd = 0;
+				this.DataChanged();
+			});
+		}
 
-                // segment to repeat
-                for (int i = 0; i < iterations; i++)
-                {
-                    Array.Copy(this.Data, s0, newData, this.LengthSamples + i * segmentLen, segmentLen);
-                }
+		public async Task InsertAudioAtAsync(AudioObj insertItem, long insertIndex = 0, bool mixInsteadOfInsert = false)
+		{
+			if (insertItem == null || insertItem.Data == null || insertItem.Data.Length == 0)
+			{
+				return;
+			}
 
-                this.Data = newData;
-                this.DataChanged();
-            });
-        }
+			if (mixInsteadOfInsert)
+			{
+				await Task.Run(() =>
+				{
+					long idx = Math.Clamp(insertIndex, 0, this.LengthSamples);
+					long mixLen = Math.Min(insertItem.LengthSamples, this.LengthSamples - idx);
+					for (long i = 0; i < mixLen; i++)
+					{
+						this.Data[idx + i] += insertItem.Data[i];
+					}
+					this.DataChanged();
+				});
+				return;
+			}
 
-        public async Task NormalizeAsync(float targetAmplitude, long? selectionStart = null, long? selectionEnd = null)
-        {
-            targetAmplitude = Math.Clamp(targetAmplitude, 0f, 1f);
-            await Task.Run(() =>
-            {
-                long s0 = selectionStart ?? this.SelectionStart;
-                long s1 = selectionEnd ?? this.SelectionEnd;
-                s0 = Math.Max(0, Math.Min(s0, s1));
-                s1 = Math.Max(0, Math.Max(s0, s1));
-                s0 = Math.Min(s0, this.LengthSamples);
-                s1 = Math.Min(s1, this.LengthSamples);
-                if (s0 == s1)
-                {
-                    s0 = 0; s1 = this.LengthSamples;
-                }
+			await Task.Run(() =>
+			{
+				long idx = Math.Clamp(insertIndex, 0, this.LengthSamples);
+				long newLen = this.LengthSamples + insertItem.LengthSamples;
+				var newData = new float[newLen];
+				// copy head
+				if (idx > 0)
+				{
+					Array.Copy(this.Data, 0, newData, 0, idx);
+				}
+				// copy insert
+				Array.Copy(insertItem.Data, 0, newData, idx, insertItem.LengthSamples);
+				// copy tail
+				long tailLen = this.LengthSamples - idx;
+				if (tailLen > 0)
+				{
+					Array.Copy(this.Data, idx, newData, idx + insertItem.LengthSamples, tailLen);
+				}
 
-                float maxAbs = 0f;
-                for (long i = s0; i < s1; i++)
-                {
-                    float a = Math.Abs(this.Data[i]);
-                    if (a > maxAbs)
+				this.Data = newData;
+				this.DataChanged();
+			});
+		}
+
+		public async Task ConcatSelfAsync(bool useSelection = false, int iterations = 1)
+		{
+			iterations = Math.Max(1, iterations);
+			await Task.Run(() =>
+			{
+				long s0 = 0;
+				long s1 = this.LengthSamples;
+				if (useSelection)
+				{
+					s0 = Math.Max(0, Math.Min(this.SelectionStart, this.SelectionEnd));
+					s1 = Math.Max(0, Math.Max(this.SelectionStart, this.SelectionEnd));
+					s0 = Math.Min(s0, this.LengthSamples);
+					s1 = Math.Min(s1, this.LengthSamples);
+				}
+
+				long segmentLen = Math.Max(0, s1 - s0);
+				if (segmentLen <= 0)
+				{
+					return;
+				}
+
+				long newLen = this.LengthSamples + segmentLen * iterations;
+				var newData = new float[newLen];
+
+				// original
+				Array.Copy(this.Data, 0, newData, 0, this.LengthSamples);
+
+				// segment to repeat
+				for (int i = 0; i < iterations; i++)
+				{
+					Array.Copy(this.Data, s0, newData, this.LengthSamples + i * segmentLen, segmentLen);
+				}
+
+				this.Data = newData;
+				this.DataChanged();
+			});
+		}
+
+		public async Task NormalizeAsync(float targetAmplitude, long? selectionStart = null, long? selectionEnd = null)
+		{
+			targetAmplitude = Math.Clamp(targetAmplitude, 0f, 1f);
+			await Task.Run(() =>
+			{
+				long s0 = selectionStart ?? this.SelectionStart;
+				long s1 = selectionEnd ?? this.SelectionEnd;
+				s0 = Math.Max(0, Math.Min(s0, s1));
+				s1 = Math.Max(0, Math.Max(s0, s1));
+				s0 = Math.Min(s0, this.LengthSamples);
+				s1 = Math.Min(s1, this.LengthSamples);
+				if (s0 == s1)
+				{
+					s0 = 0; s1 = this.LengthSamples;
+				}
+
+				float maxAbs = 0f;
+				for (long i = s0; i < s1; i++)
+				{
+					float a = Math.Abs(this.Data[i]);
+					if (a > maxAbs)
 					{
 						maxAbs = a;
 					}
 				}
-                if (maxAbs <= 0f)
+				if (maxAbs <= 0f)
 				{
 					return;
 				}
 
 				float scale = targetAmplitude / maxAbs;
-                for (long i = s0; i < s1; i++)
-                {
-                    this.Data[i] *= scale;
-                }
-            });
-            this.DataChanged();
-        }
+				for (long i = s0; i < s1; i++)
+				{
+					this.Data[i] *= scale;
+				}
+			});
+			this.DataChanged();
+		}
 
-        public async Task FadeInAsync(float targetAmplitude, long? selectionStart = null, long? selectionEnd = null)
-        {
-            targetAmplitude = Math.Clamp(targetAmplitude, 0f, 1f);
-            await Task.Run(() =>
-            {
-                long s0 = selectionStart ?? this.SelectionStart;
-                long s1 = selectionEnd ?? this.SelectionEnd;
-                s0 = Math.Max(0, Math.Min(s0, s1));
-                s1 = Math.Max(0, Math.Max(s0, s1));
-                s0 = Math.Min(s0, this.LengthSamples);
-                s1 = Math.Min(s1, this.LengthSamples);
-                if (s0 == s1)
-                {
-                    s0 = 0; s1 = this.LengthSamples;
-                }
-                long len = Math.Max(1, s1 - s0);
-                for (long i = 0; i < len; i++)
-                {
-                    float t = i / (float) (len - 1);
-                    float amp = (1 - t) * 0f + t * targetAmplitude;
-                    long idx = s0 + i;
-                    this.Data[idx] *= amp;
-                }
-            });
-            this.DataChanged();
-        }
+		public async Task FadeInAsync(float targetAmplitude, long? selectionStart = null, long? selectionEnd = null)
+		{
+			targetAmplitude = Math.Clamp(targetAmplitude, 0f, 1f);
+			await Task.Run(() =>
+			{
+				long s0 = selectionStart ?? this.SelectionStart;
+				long s1 = selectionEnd ?? this.SelectionEnd;
+				s0 = Math.Max(0, Math.Min(s0, s1));
+				s1 = Math.Max(0, Math.Max(s0, s1));
+				s0 = Math.Min(s0, this.LengthSamples);
+				s1 = Math.Min(s1, this.LengthSamples);
+				if (s0 == s1)
+				{
+					s0 = 0; s1 = this.LengthSamples;
+				}
+				long len = Math.Max(1, s1 - s0);
+				for (long i = 0; i < len; i++)
+				{
+					float t = i / (float) (len - 1);
+					float amp = (1 - t) * 0f + t * targetAmplitude;
+					long idx = s0 + i;
+					this.Data[idx] *= amp;
+				}
+			});
+			this.DataChanged();
+		}
 
-        public async Task FadeOutAsync(float targetAmplitude, long? selectionStart = null, long? selectionEnd = null)
-        {
-            targetAmplitude = Math.Clamp(targetAmplitude, 0f, 1f);
-            await Task.Run(() =>
-            {
-                long s0 = selectionStart ?? this.SelectionStart;
-                long s1 = selectionEnd ?? this.SelectionEnd;
-                s0 = Math.Max(0, Math.Min(s0, s1));
-                s1 = Math.Max(0, Math.Max(s0, s1));
-                s0 = Math.Min(s0, this.LengthSamples);
-                s1 = Math.Min(s1, this.LengthSamples);
-                if (s0 == s1)
-                {
-                    s0 = 0; s1 = this.LengthSamples;
-                }
-                long len = Math.Max(1, s1 - s0);
-                for (long i = 0; i < len; i++)
-                {
-                    float t = i / (float) (len - 1);
-                    float amp = (1 - t) * targetAmplitude + t * 0f;
-                    long idx = s0 + i;
-                    this.Data[idx] *= amp;
-                }
-            });
-            this.DataChanged();
-        }
+		public async Task FadeOutAsync(float targetAmplitude, long? selectionStart = null, long? selectionEnd = null)
+		{
+			targetAmplitude = Math.Clamp(targetAmplitude, 0f, 1f);
+			await Task.Run(() =>
+			{
+				long s0 = selectionStart ?? this.SelectionStart;
+				long s1 = selectionEnd ?? this.SelectionEnd;
+				s0 = Math.Max(0, Math.Min(s0, s1));
+				s1 = Math.Max(0, Math.Max(s0, s1));
+				s0 = Math.Min(s0, this.LengthSamples);
+				s1 = Math.Min(s1, this.LengthSamples);
+				if (s0 == s1)
+				{
+					s0 = 0; s1 = this.LengthSamples;
+				}
+				long len = Math.Max(1, s1 - s0);
+				for (long i = 0; i < len; i++)
+				{
+					float t = i / (float) (len - 1);
+					float amp = (1 - t) * targetAmplitude + t * 0f;
+					long idx = s0 + i;
+					this.Data[idx] *= amp;
+				}
+			});
+			this.DataChanged();
+		}
+
+		public void CopyAudioObj(AudioObj source)
+		{
+			this.Name = source.Name;
+			this.FilePath = source.FilePath;
+			this.SampleRate = source.SampleRate;
+			this.Channels = source.Channels;
+			this.BitDepth = source.BitDepth;
+			this.Data = source.Data != null ? (float[]) source.Data.Clone() : [];
+			this.DataChanged();
+		}
 
 
 
@@ -440,10 +457,10 @@ namespace LPAP.Audio
 			{
 				try
 				{
-					var source = this.Data ?? Array.Empty<float>();
+					var source = this.Data ?? [];
 					if (source.Length == 0)
 					{
-						return Enumerable.Empty<float[]>();
+						return [];
 					}
 
 					// Threadsicher: Arbeite auf lokalem Snapshot
@@ -473,7 +490,7 @@ namespace LPAP.Audio
 					{
 						// Daten nicht behalten: leeren in einem Schritt und Events feuern
 						// Threadsicherer Austausch nach kompletter Berechnung
-						this.Data = Array.Empty<float>();
+						this.Data = [];
 						this.DataChanged();
 					}
 
@@ -485,7 +502,7 @@ namespace LPAP.Audio
 				catch (Exception)
 				{
 					// Best Practice: Fehler isolieren, kein Blockieren. Caller kann mit leerem Resultat umgehen.
-					return Enumerable.Empty<float[]>();
+					return [];
 				}
 			}).ConfigureAwait(false);
 		}

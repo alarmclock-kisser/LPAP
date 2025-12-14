@@ -33,7 +33,12 @@
 			this.pictureBox_cores = new PictureBox();
 			this.progressBar_memory = new ProgressBar();
 			this.label_memory = new Label();
+			this.checkBox_enableMonitoring = new CheckBox();
+			this.numericUpDown_statisticsUpdateDelay = new NumericUpDown();
+			this.label_info_statisticsUpdateDelay = new Label();
+			this.checkBox_autoApply = new CheckBox();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).BeginInit();
 			this.SuspendLayout();
 			// 
 			// button_import
@@ -83,11 +88,60 @@
 			this.label_memory.TabIndex = 4;
 			this.label_memory.Text = "RAM: 0.00 MB / - MB";
 			// 
+			// checkBox_enableMonitoring
+			// 
+			this.checkBox_enableMonitoring.AutoSize = true;
+			this.checkBox_enableMonitoring.Checked = true;
+			this.checkBox_enableMonitoring.CheckState = CheckState.Checked;
+			this.checkBox_enableMonitoring.Location = new Point(442, 154);
+			this.checkBox_enableMonitoring.Name = "checkBox_enableMonitoring";
+			this.checkBox_enableMonitoring.Size = new Size(68, 19);
+			this.checkBox_enableMonitoring.TabIndex = 5;
+			this.checkBox_enableMonitoring.Text = "Enabled";
+			this.checkBox_enableMonitoring.UseVisualStyleBackColor = true;
+			this.checkBox_enableMonitoring.CheckedChanged += this.checkBox_enableMonitoring_CheckedChanged;
+			// 
+			// numericUpDown_statisticsUpdateDelay
+			// 
+			this.numericUpDown_statisticsUpdateDelay.Increment = new decimal(new int[] { 125, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.Location = new Point(542, 154);
+			this.numericUpDown_statisticsUpdateDelay.Maximum = new decimal(new int[] { 2500, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.Minimum = new decimal(new int[] { 125, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.Name = "numericUpDown_statisticsUpdateDelay";
+			this.numericUpDown_statisticsUpdateDelay.Size = new Size(50, 23);
+			this.numericUpDown_statisticsUpdateDelay.TabIndex = 6;
+			this.numericUpDown_statisticsUpdateDelay.Value = new decimal(new int[] { 500, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.ValueChanged += this.numericUpDown_statisticsUpdateDelay_ValueChanged;
+			// 
+			// label_info_statisticsUpdateDelay
+			// 
+			this.label_info_statisticsUpdateDelay.AutoSize = true;
+			this.label_info_statisticsUpdateDelay.Location = new Point(542, 180);
+			this.label_info_statisticsUpdateDelay.Name = "label_info_statisticsUpdateDelay";
+			this.label_info_statisticsUpdateDelay.Size = new Size(55, 15);
+			this.label_info_statisticsUpdateDelay.TabIndex = 7;
+			this.label_info_statisticsUpdateDelay.Text = "Delay ms";
+			// 
+			// checkBox_autoApply
+			// 
+			this.checkBox_autoApply.AutoSize = true;
+			this.checkBox_autoApply.Location = new Point(12, 410);
+			this.checkBox_autoApply.Name = "checkBox_autoApply";
+			this.checkBox_autoApply.Size = new Size(106, 19);
+			this.checkBox_autoApply.TabIndex = 8;
+			this.checkBox_autoApply.Text = "Apply on Close";
+			this.checkBox_autoApply.UseVisualStyleBackColor = true;
+			this.checkBox_autoApply.CheckedChanged += this.checkBox_autoApply_CheckedChanged;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(604, 441);
+			this.Controls.Add(this.checkBox_autoApply);
+			this.Controls.Add(this.label_info_statisticsUpdateDelay);
+			this.Controls.Add(this.numericUpDown_statisticsUpdateDelay);
+			this.Controls.Add(this.checkBox_enableMonitoring);
 			this.Controls.Add(this.label_memory);
 			this.Controls.Add(this.progressBar_memory);
 			this.Controls.Add(this.pictureBox_cores);
@@ -99,6 +153,7 @@
 			this.Name = "WindowMain";
 			this.Text = "LPAP (Forms) Main-Control";
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -110,5 +165,9 @@
 		private PictureBox pictureBox_cores;
 		private ProgressBar progressBar_memory;
 		private Label label_memory;
+		private CheckBox checkBox_enableMonitoring;
+		private NumericUpDown numericUpDown_statisticsUpdateDelay;
+		private Label label_info_statisticsUpdateDelay;
+		private CheckBox checkBox_autoApply;
 	}
 }
