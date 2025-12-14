@@ -71,6 +71,7 @@ namespace LPAP.Forms.Views
 		private Point _mouseDownPoint;
 		private long _mouseDownSample;
 		private const int ClickMoveTolerance = 3;
+		private bool _isClosing;
 
 		public TrackView(AudioObj audio, AudioCollection? audioCollection = null)
 		{
@@ -117,6 +118,7 @@ namespace LPAP.Forms.Views
 
 			this.FormClosing += (s, e) =>
 			{
+				this._isClosing = true;
 				WindowMain.OpenTrackViews.Remove(this);
 				if (WindowMain.AutoApplyOnClose && this.SourceAudioCollection != null)
 				{
@@ -124,16 +126,22 @@ namespace LPAP.Forms.Views
 					this.SourceAudioCollection.Update(this.Audio.Clone(true));
 				}
 
-				// ensure playback is stopped synchronously before disposing
-				try { this.Audio.StopAsync().GetAwaiter().GetResult(); } catch { }
-
-				// stop and dispose UI timers and rendering
+				// stop UI timers first to avoid re-entrancy
 				try { this._waveTimer?.Stop(); } catch { }
 				try { this._waveTimer?.Dispose(); } catch { }
+
+				// cancel any rendering
 				try { this._renderCts?.Cancel(); } catch { }
 				try { this._renderCts?.Dispose(); } catch { }
 				this._renderCts = null;
 				this._timerInitialized = false;
+
+				// try to stop playback asynchronously without deadlock
+				try
+				{
+					this.Audio.Stop();
+				}
+				catch { }
 
 				// detach event handlers to avoid callbacks after close
 				try { this.Audio.PropertyChanged -= this.Audio_PropertyChanged; } catch { }
@@ -238,6 +246,10 @@ namespace LPAP.Forms.Views
 
 		private async void WaveTimer_Tick(object? sender, EventArgs e)
 		{
+			if (this._isClosing)
+			{
+				return;
+			}
 			// Laufenden State und Position abholen (immer, auch wenn Rendering beschäftigt)
 			this._uiPlaybackState = this.Audio.PlaybackState;
 			long playSample = this.Audio.PlaybackPositionSamples;
@@ -695,7 +707,8 @@ namespace LPAP.Forms.Views
 		{
 			name ??= this.Audio.Name;
 			string zoomInfo = addZoomLevel ? $" ({this.SamplesPerPixel} SPP)" : string.Empty;
-			this.Text = $"'{name}'{zoomInfo}";
+			string bpmInfo = this.Audio.BeatsPerMinute > 0 ? $" [BPM: {this.Audio.BeatsPerMinute:F2}]" : this.Audio.ScannedBeatsPerMinute > 0 ? $" [BPM: {this.Audio.ScannedBeatsPerMinute:F2}]" : string.Empty;
+			this.Text = $"'{name}'{zoomInfo} {bpmInfo}";
 		}
 
 		private void SetOffsetSamples(long offsetSamples)
@@ -951,7 +964,6 @@ namespace LPAP.Forms.Views
 
 		private void v1ToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			// TODO: implement later
 			var dlg = new TimeStretchDialog(this);
 			dlg.ShowDialog();
 		}

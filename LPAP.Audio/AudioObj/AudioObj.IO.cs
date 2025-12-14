@@ -78,6 +78,8 @@ namespace LPAP.Audio
 				this.Data = data;
 			}, ct).ConfigureAwait(false);
 
+			this.ReadBeatsPerMinuteTag();
+
 			this.DataChanged();
 		}
 
