@@ -23,9 +23,10 @@ namespace LPAP.Forms
 		public WindowMain()
 		{
 			Instance = this;
-			AutoApplyOnClose = this.checkBox_autoApply.Checked;
 			this.InitializeComponent();
 			WindowsScreenHelper.SetWindowScreenPosition(this, [AnchorStyles.Right, AnchorStyles.Top]);
+
+			AutoApplyOnClose = this.checkBox_autoApply.Checked;
 
 			// initialize statistics monitoring and assign mandatory attribute
 			this._statisticsTimer = this.InitializeStatisticsTimer();

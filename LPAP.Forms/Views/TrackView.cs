@@ -47,7 +47,6 @@ namespace LPAP.Forms.Views
 		public static int InitialWidth { get; set; } = 600;
 		public static int MinimumWidth { get; set; } = 200;
 		public static int MaximumWidth { get; set; } = 4096;
-		public static bool AutoApplyOnClose => WindowMain.AutoApplyOnClose;
 
 		// ---- Indicators ----
 		public bool IsPlaying => this.Audio.PlaybackState == PlaybackState.Playing;
@@ -119,10 +118,10 @@ namespace LPAP.Forms.Views
 			this.FormClosing += (s, e) =>
 			{
 				WindowMain.OpenTrackViews.Remove(this);
-				if (AutoApplyOnClose && this.SourceAudioCollection != null)
+				if (WindowMain.AutoApplyOnClose && this.SourceAudioCollection != null)
 				{
 					// overwrite existing item in the source collection (no duplicate)
-					this.SourceAudioCollection.Update(this.Audio);
+					this.SourceAudioCollection.Update(this.Audio.Clone(true));
 				}
 
 				// ensure playback is stopped synchronously before disposing
