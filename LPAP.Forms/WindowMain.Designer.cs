@@ -37,6 +37,7 @@
 			this.numericUpDown_statisticsUpdateDelay = new NumericUpDown();
 			this.label_info_statisticsUpdateDelay = new Label();
 			this.checkBox_autoApply = new CheckBox();
+			this.button_looping = new Button();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).BeginInit();
 			this.SuspendLayout();
@@ -133,11 +134,22 @@
 			this.checkBox_autoApply.UseVisualStyleBackColor = true;
 			this.checkBox_autoApply.CheckedChanged += this.checkBox_autoApply_CheckedChanged;
 			// 
+			// button_looping
+			// 
+			this.button_looping.Location = new Point(219, 12);
+			this.button_looping.Name = "button_looping";
+			this.button_looping.Size = new Size(75, 23);
+			this.button_looping.TabIndex = 9;
+			this.button_looping.Text = "Looping";
+			this.button_looping.UseVisualStyleBackColor = true;
+			this.button_looping.Click += this.button_looping_Click;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(604, 441);
+			this.Controls.Add(this.button_looping);
 			this.Controls.Add(this.checkBox_autoApply);
 			this.Controls.Add(this.label_info_statisticsUpdateDelay);
 			this.Controls.Add(this.numericUpDown_statisticsUpdateDelay);
@@ -169,5 +181,6 @@
 		private NumericUpDown numericUpDown_statisticsUpdateDelay;
 		private Label label_info_statisticsUpdateDelay;
 		private CheckBox checkBox_autoApply;
+		private Button button_looping;
 	}
 }

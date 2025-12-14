@@ -78,6 +78,12 @@ namespace LPAP.Forms.Views
 			this.InitializeComponent();
 			WindowMain.OpenTrackViews.Add(this);
 
+			// Beim Aktivieren der Form die letzte ausgewählte TrackView setzen
+			this.Activated += (_, _) => WindowMain.LastSelectedTrackView = this;
+			// Falls ein Steuerelement den Fokus erhält, ebenfalls setzen
+			this.Enter += (_, _) => WindowMain.LastSelectedTrackView = this;
+
+
 			// keep original Id so apply/update can overwrite instead of duplicate
 			this.Audio = audio.Clone(keepId: true);
 			this.SourceAudioCollection = audioCollection;
@@ -148,6 +154,11 @@ namespace LPAP.Forms.Views
 
 				// finally dispose audio
 				this.Audio.Dispose();
+
+				if (WindowMain.LastSelectedTrackView == this)
+				{
+					WindowMain.LastSelectedTrackView = null;
+				}
 
 				ReflowAllTrackViews();
 			};
@@ -991,5 +1002,17 @@ namespace LPAP.Forms.Views
 				WindowMain.UpdateAllCollectionViews();
 			}
 		}
+
+
+
+
+		// Public accessors
+		public void RefreshWaveform()
+		{
+			this.InitializeScrolling();
+		}
+
+
+
 	}
 }

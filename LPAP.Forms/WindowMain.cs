@@ -1,6 +1,7 @@
 using LPAP.Audio;
 using LPAP.Forms.Views;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using Timer = System.Windows.Forms.Timer;
 
 namespace LPAP.Forms
@@ -8,6 +9,21 @@ namespace LPAP.Forms
 	public partial class WindowMain : Form
 	{
 		internal static WindowMain? Instance { get; private set; }
+
+		internal static TrackView? LastSelectedTrackView
+		{
+			get => _lastSelectedTrackView;
+			set
+			{
+				if (_lastSelectedTrackView != value)
+				{
+					_lastSelectedTrackView = value;
+					LoopControlWindow?.UpdateLoopButtonsState();
+				}
+			}
+		}
+		internal static TrackView? _lastSelectedTrackView = null;
+		internal static LoopControl? LoopControlWindow { get; set; } = null;
 
 		internal static readonly BindingList<AudioCollectionView> OpenAudioCollectionViews = [];
 		internal static readonly BindingList<TrackView> OpenTrackViews = [];
@@ -118,6 +134,12 @@ namespace LPAP.Forms
 		private void checkBox_autoApply_CheckedChanged(object sender, EventArgs e)
 		{
 			AutoApplyOnClose = this.checkBox_autoApply.Checked;
+		}
+
+		private void button_looping_Click(object sender, EventArgs e)
+		{
+			LoopControlWindow ??= new LoopControl();
+			LoopControlWindow.Show();
 		}
 	}
 }

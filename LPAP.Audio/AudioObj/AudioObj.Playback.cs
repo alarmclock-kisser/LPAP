@@ -5,6 +5,9 @@ namespace LPAP.Audio
 {
 	public partial class AudioObj
 	{
+		public float LoopFraction { get; internal set; } = 1.0f;
+
+
 		public Task PlayAsync(bool loop = false, long? startSample = null)
 		{
 			// Sofort UI-State aktualisieren, Engine setzt ihn ebenfalls
@@ -87,23 +90,27 @@ namespace LPAP.Audio
 		public Task SetLoopAsync(long startSample, long endSample, float fraction = 1.0f)
 		{
 			AudioPlaybackEngine.Instance.SetLoop(this, startSample, endSample, fraction);
+			this.LoopFraction = fraction;
 			return Task.CompletedTask;
 		}
 
 		public void SetLoop(long startSample, long endSample, float fraction = 1.0f)
 		{
 			AudioPlaybackEngine.Instance.SetLoop(this, startSample, endSample, fraction);
+			this.LoopFraction = fraction;
 		}
 
 		public Task UpdateLoopFractionAsync(float fraction)
 		{
 			AudioPlaybackEngine.Instance.UpdateLoopFraction(this, fraction);
+			this.LoopFraction = fraction;
 			return Task.CompletedTask;
 		}
 
 		public void UpdateLoopFraction(float fraction)
 		{
 			AudioPlaybackEngine.Instance.UpdateLoopFraction(this, fraction);
+			this.LoopFraction = fraction;
 		}
 
 

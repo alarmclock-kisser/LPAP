@@ -819,6 +819,10 @@ namespace LPAP.Forms.Views
 			this.listBox_audios.Invalidate();
 		}
 
+		public void Rename(string newName)
+		{
+			this.Text = newName;
+		}
 
 	}
 
