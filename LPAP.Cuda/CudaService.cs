@@ -442,9 +442,64 @@ namespace LPAP.Cuda
 		}
 
 
+        // Accessors: Info
+        public IEnumerable<string> GetDeviceInfo(bool identifier = true)
+        {
+            List<string> identifiers =
+                [
+                    "Device ID: ",
+                    "Device Name: ",
+                    "Compute Capability: ",
+                    "Total Memory (MB): ",
+                    "Multiprocessor Count: ",
+                    "Clock Rate (MHz): ",
+                    "Memory Clock Rate (MHz): ",
+                    "Memory Bus Width (bits): ",
+                    "Cache Size (KB): ",
+                    "Shared Memory per Block (KB): ",
+                    "Warp Size: ",
+                    "Max Threads per Block: ",
+                    "Max Threads Dimension: ",
+                    "Max Grid Size: "
+                ];
 
-		// Accessors: Move AudioObj
-		public AudioObj MoveAudio(AudioObj obj, int chunkSize = 16384, float overlap = 0.5f, bool keep = false)
+            List<string> info = [];
+            if (this.CTX == null)
+            {
+                return identifiers.Select(id => id + "N/A").ToList();
+            }
+
+            var devProps = this.CTX.GetDeviceInfo();
+            info.Add(this.CTX.DeviceId.ToString());
+            info.Add(this.CTX.GetDeviceName());
+            info.Add($"{devProps.ComputeCapability.Major}.{devProps.ComputeCapability.Minor}");
+            info.Add((devProps.TotalGlobalMemory / (1024 * 1024)).ToString());
+            info.Add(devProps.MultiProcessorCount.ToString());
+            info.Add((devProps.ClockRate / 1000).ToString());
+            info.Add((devProps.MemoryClockRate / 1000).ToString());
+            info.Add(devProps.GlobalMemoryBusWidth.ToString());
+            info.Add((devProps.L2CacheSize / 1024).ToString());
+            info.Add((devProps.SharedMemoryPerBlock / 1024).ToString());
+            info.Add(devProps.WarpSize.ToString());
+            info.Add(devProps.MaxThreadsPerBlock.ToString());
+            info.Add($"{devProps.MaxBlockDim.x}, {devProps.MaxBlockDim.y}, {devProps.MaxBlockDim.z}");
+            info.Add($"{devProps.MaxGridDim.x}, {devProps.MaxGridDim.y}, {devProps.MaxGridDim.z}");
+
+            if (identifier)
+            {
+                return identifiers.Zip(info, (id, val) => id + val).ToList();
+            }
+            else
+            {
+                return info;
+            }
+        }
+
+
+
+
+        // Accessors: Move AudioObj
+        public AudioObj MoveAudio(AudioObj obj, int chunkSize = 16384, float overlap = 0.5f, bool keep = false)
 		{
 			if (this.Register == null)
 			{

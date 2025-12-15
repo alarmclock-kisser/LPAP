@@ -8,7 +8,7 @@ namespace LPAP.Forms
 {
 	public partial class WindowMain
 	{
-		private readonly CudaService Cuda = new();
+		private readonly CudaService Cuda = new(-1, "");
 
 		internal static string? CudaDevice { get; private set; } = null;
 
@@ -76,11 +76,21 @@ namespace LPAP.Forms
 			{
 				double load = this.Cuda.GpuLoadPercent * 100;
 				double total = this.Cuda.TotalMemoryMb;
-				double used = this.Cuda.AllocatedMemoryMb;
 				double free = this.Cuda.AvailableMemoryMb;
+				double used = total - free;
 
-				this.label_gpuLoad.Text = "Load: " + load.ToString("F2") + " %";
-				this.label_vram.Text = "Vram: " + used.ToString("F2") + " MB / " + total.ToString("F2") + " MB";
+                this.label_gpuLoad.Text = "Load: " + load.ToString("F2") + " %";
+				this.label_gpuLoad.ForeColor = load switch
+                {
+					>= 95.0 => System.Drawing.Color.Red,
+                    >= 80.0 => System.Drawing.Color.DarkRed,
+					>= 50.0 => System.Drawing.Color.DarkOrange,
+					>= 25.0 => System.Drawing.Color.DarkGoldenrod,
+                    >= 10.0 => System.Drawing.Color.Green,
+					_ => System.Drawing.Color.DarkGreen,
+                };
+
+                this.label_vram.Text = "VRAM: " + used.ToString("F0") + " MB / " + total.ToString("F0") + " MB";
 				this.progressBar_vram.Maximum = (int) total;
 				this.progressBar_vram.Value = (int) used;
 
@@ -90,7 +100,8 @@ namespace LPAP.Forms
 				this.progressBar_vram.Value = 0;
 				this.label_vram.Text = $"VRAM: N/A";
 				this.label_gpuLoad.Text = $"GPU offline";
-			}
+				this.label_gpuLoad.ForeColor = SystemColors.ControlText;
+            }
 		}
 
 		private async Task BuildCudaKernelArgsAsync(float inputWidthPart = 0.64f)
@@ -205,9 +216,22 @@ namespace LPAP.Forms
 			}
 		}
 
+        private void button_cudaInfo_Click(object sender, EventArgs e)
+        {
+			if (!this.Cuda.Initialized)
+			{
+				MessageBox.Show("CUDA is not initialized.", "CUDA Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+			{
+				bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+				string info = string.Join(Environment.NewLine, this.Cuda.GetDeviceInfo(!ctrlFlag));
+				MessageBox.Show(info, "CUDA Info [" + this.Cuda.Index + "]", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
 
 
-		private async void comboBox_cudaKernels_SelectedIndexChanged(object sender, EventArgs e)
+        private async void comboBox_cudaKernels_SelectedIndexChanged(object sender, EventArgs e)
 		{
 			await this.BuildCudaKernelArgsAsync();
 		}

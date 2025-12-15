@@ -23,8 +23,8 @@ namespace LPAP.Cuda
 
 		// Properties
 		public long TotalMemory => this.GetTotalMemoryBytes();
-		public long TotalMemoryAvailable => 0;
-		public long TotalMemoryAllocated => this.memory.Values.Sum(m => m.TotalSize);
+		public long TotalMemoryAvailable => this.GetTotalAvailableBytes();
+        public long TotalMemoryAllocated => this.memory.Values.Sum(m => m.TotalSize);
 		public int RegisteredMemoryObjects => this.memory.Count;
 		public int ThreadsActive => this.streams.Count(s => s.Value > 0);
 		public int ThreadsIdle => this.streams.Count(s => s.Value <= 0);
@@ -1052,7 +1052,7 @@ namespace LPAP.Cuda
 			return memory;
 		}
 
-		public long GetTotalAvailablyBytes()
+		public long GetTotalAvailableBytes()
 		{
 			long memory = 0;
 			try

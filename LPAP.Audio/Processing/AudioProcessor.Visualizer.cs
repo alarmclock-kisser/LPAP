@@ -261,146 +261,190 @@ namespace LPAP.Audio.Processing
 			public int Length { get; }
 		}
 
-		public static (ChannelReader<FramePacket> reader, int frameCount)
-			RenderVisualizerFramesBgraChannel(
-				AudioObj audio,
-				int width,
-				int height,
-				float frameRate = 20.0f,
-				int maxWorkers = 0,
-				int channelCapacity = 0,
-				IProgress<double>? progress = null,
-				CancellationToken? ct = null)
-		{
-			if (audio == null)
-			{
-				throw new ArgumentNullException(nameof(audio));
-			}
+        public static (ChannelReader<FramePacket> reader, int frameCount) RenderVisualizerFramesBgraChannel(
+    AudioObj audio,
+    int width,
+    int height,
+    float frameRate = 20.0f,
+    float amplification = 0.8f,   // <<< NEU
+    int maxWorkers = 0,
+    int channelCapacity = 0,
+    IProgress<double>? progress = null,
+    CancellationToken? ct = null)
+        {
+            if (audio is null)
+            {
+                throw new ArgumentNullException(nameof(audio));
+            }
 
-			if (audio.Data == null)
-			{
-				throw new ArgumentException("audio.Data null");
-			}
+            if (audio.Data is null)
+            {
+                throw new ArgumentException("audio.Data null", nameof(audio));
+            }
 
-			if (width <= 0 || height <= 0)
-			{
-				throw new ArgumentOutOfRangeException();
-			}
+            if (width <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(width));
+            }
 
-			var token = ct ?? CancellationToken.None;
-			if (frameRate <= 0)
-			{
-				frameRate = 20f;
-			}
+            if (height <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(height));
+            }
 
-			maxWorkers = maxWorkers <= 0
-				? Environment.ProcessorCount
-				: Math.Clamp(maxWorkers, 1, Environment.ProcessorCount);
+            var token = ct ?? CancellationToken.None;
 
-			if (channelCapacity <= 0)
-			{
-				channelCapacity = Math.Max(2, maxWorkers * 2);
-			}
+            if (frameRate <= 0)
+            {
+                frameRate = 20f;
+            }
 
-			int channels = Math.Max(1, audio.Channels);
-			int sampleRate = Math.Max(1, audio.SampleRate);
+            maxWorkers = maxWorkers <= 0
+                ? Environment.ProcessorCount
+                : Math.Clamp(maxWorkers, 1, Environment.ProcessorCount);
 
-			double duration = audio.Duration.TotalSeconds > 0
-				? audio.Duration.TotalSeconds
-				: (audio.Data.Length / (double) channels) / sampleRate;
+            if (channelCapacity <= 0)
+            {
+                channelCapacity = Math.Max(2, maxWorkers * 2);
+            }
 
-			int frameCount = Math.Max(1, (int) Math.Ceiling(duration * frameRate));
-			int frameBytes = checked(width * height * 4);
+            int channels = Math.Max(1, audio.Channels);
+            int sampleRate = Math.Max(1, audio.SampleRate);
 
-			var channel = Channel.CreateBounded<FramePacket>(
-				new BoundedChannelOptions(channelCapacity)
-				{
-					FullMode = BoundedChannelFullMode.Wait,
-					SingleReader = false,
-					SingleWriter = false
-				});
+            double duration = audio.Duration.TotalSeconds > 0
+                ? audio.Duration.TotalSeconds
+                : (audio.Data.Length / (double) channels) / sampleRate;
 
-			progress?.Report(0.0);
-			int produced = 0;
+            int frameCount = Math.Max(1, (int) Math.Ceiling(duration * frameRate));
+            int frameBytes = checked(width * height * 4);
 
-			_ = Task.Run(async () =>
-			{
-				var opts = new ParallelOptions
-				{
-					MaxDegreeOfParallelism = maxWorkers,
-					CancellationToken = token
-				};
+            var channel = Channel.CreateBounded<FramePacket>(
+                new BoundedChannelOptions(channelCapacity)
+                {
+                    FullMode = BoundedChannelFullMode.Wait,
+                    SingleReader = false,
+                    SingleWriter = false
+                });
 
-				try
-				{
-					await Parallel.ForAsync(0, frameCount, opts, async (i, innerCt) =>
-					{
-						innerCt.ThrowIfCancellationRequested();
+            progress?.Report(0.0);
+            int produced = 0;
 
-						double t0 = i / (double) frameRate;
-						double t1 = (i + 1) / (double) frameRate;
+            long availableSamplesPerChannel =
+                (audio.LengthSamples > 0)
+                    ? audio.LengthSamples
+                    : (audio.Data.LongLength / channels);
 
-						long s0 = (long) (t0 * sampleRate);
-						long s1 = (long) (t1 * sampleRate);
-						if (s1 <= s0)
-						{
-							s1 = s0 + 1;
-						}
+            // Producer Task
+            _ = Task.Run(async () =>
+            {
+                var opts = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = maxWorkers,
+                    CancellationToken = token
+                };
 
-						byte[] buffer = ArrayPool<byte>.Shared.Rent(frameBytes);
+                try
+                {
+                    await Parallel.ForAsync(0, frameCount, opts, async (i, innerCt) =>
+                    {
+                        innerCt.ThrowIfCancellationRequested();
 
-						try
-						{
-							RenderWaveformToBgra(
-								audio.Data,
-								channels,
-								width,
-								height,
-								s0,
-								s1,
-								buffer);
+                        double t0 = i / (double) frameRate;
+                        double t1 = (i + 1) / (double) frameRate;
 
-							await channel.Writer
-								.WriteAsync(new FramePacket(i, buffer, frameBytes), innerCt)
-								.ConfigureAwait(false);
+                        long s0 = (long) Math.Floor(t0 * sampleRate);
+                        long s1 = (long) Math.Floor(t1 * sampleRate);
+                        if (s1 <= s0)
+                        {
+                            s1 = s0 + 1;
+                        }
 
-							buffer = null!;
-							int now = Interlocked.Increment(ref produced);
-							progress?.Report(now / (double) frameCount);
-						}
-						finally
-						{
-							if (buffer != null)
-							{
-								ArrayPool<byte>.Shared.Return(buffer);
-							}
-						}
-					}).ConfigureAwait(false);
+                        // CLAMP auf verfügbares Material (pro Channel)
+                        if (s0 < 0)
+                        {
+                            s0 = 0;
+                        }
 
-					channel.Writer.TryComplete();
-				}
-				catch (Exception ex)
-				{
-					channel.Writer.TryComplete(ex);
-				}
-			}, token);
+                        if (s1 < 1)
+                        {
+                            s1 = 1;
+                        }
 
-			return (channel.Reader, frameCount);
-		}
+                        if (s0 > availableSamplesPerChannel)
+                        {
+                            s0 = availableSamplesPerChannel;
+                        }
 
-		// -------------------------
-		// CORE: Waveform → BGRA
-		// -------------------------
-		private static void RenderWaveformToBgra(
-			float[] interleaved,
-			int channels,
-			int width,
-			int height,
-			long startSample,
-			long endSample,
-			byte[] dst)
-		{
-			int midY = height / 2;
+                        if (s1 > availableSamplesPerChannel)
+                        {
+                            s1 = availableSamplesPerChannel;
+                        }
+
+                        if (s1 <= s0)
+                        {
+                            s1 = Math.Min(availableSamplesPerChannel, s0 + 1);
+                        }
+
+                        byte[] buffer = ArrayPool<byte>.Shared.Rent(frameBytes);
+
+                        try
+                        {
+                            RenderWaveformToBgra(
+								audio.Data, channels,
+								width, height,
+								s0, s1,
+								buffer, amplification);
+
+
+                            await channel.Writer.WriteAsync(new FramePacket(i, buffer, frameBytes), innerCt)
+                                .ConfigureAwait(false);
+
+                            // Ownership geht an Consumer -> nicht zurückgeben
+                            buffer = null!;
+
+                            int now = Interlocked.Increment(ref produced);
+                            progress?.Report(now / (double) frameCount);
+                        }
+                        finally
+                        {
+                            if (buffer != null)
+                            {
+                                ArrayPool<byte>.Shared.Return(buffer);
+                            }
+                        }
+                    }).ConfigureAwait(false);
+
+                    channel.Writer.TryComplete();
+                }
+                catch (OperationCanceledException oce)
+                {
+                    channel.Writer.TryComplete(oce);
+                }
+                catch (Exception ex)
+                {
+                    channel.Writer.TryComplete(ex);
+                }
+            }, token);
+
+            return (channel.Reader, frameCount);
+        }
+
+
+        // -------------------------
+        // CORE: Waveform → BGRA
+        // -------------------------
+        private static void RenderWaveformToBgra(
+    float[] interleaved,
+    int channels,
+    int width,
+    int height,
+    long startSample,
+    long endSample,
+    byte[] dst,
+    float amplification)
+
+        {
+            int midY = height / 2;
 			int frameSamples = (int) Math.Max(1, endSample - startSample);
 
 			// clear black
@@ -454,10 +498,15 @@ namespace LPAP.Audio.Processing
 					}
 				}
 
-				min = Math.Clamp(min, -1f, 1f);
-				max = Math.Clamp(max, -1f, 1f);
+                // Anzeige-Gain (nur visuell!)
+                min *= amplification;
+                max *= amplification;
 
-				int y0 = midY - (int) (max * (midY - 1));
+                // danach clampen
+                min = Math.Clamp(min, -1f, 1f);
+                max = Math.Clamp(max, -1f, 1f);
+
+                int y0 = midY - (int) (max * (midY - 1));
 				int y1 = midY - (int) (min * (midY - 1));
 				if (y0 > y1)
 				{

@@ -17,7 +17,10 @@ namespace LPAP.Forms.Dialogs
 	{
 		private readonly AudioObj Audio;
 
-		private string SelectedResolution => this.comboBox_resolution.SelectedItem as string ?? "1024x512";
+        private CancellationTokenSource? _renderCts;
+        private bool _isRendering;
+
+        private string SelectedResolution => this.comboBox_resolution.SelectedItem as string ?? "1024x512";
 		internal Size ParsedResolution
 		{
 			get
@@ -74,7 +77,7 @@ namespace LPAP.Forms.Dialogs
 
 		internal void UpdateApproxInfo()
 		{
-			this.label_sizeApprox.Text = $"ca. {this.ApproxFrameCount:N0} frames ({this.ApproxSizeInMb:F2} MB)";
+			this.label_sizeApprox.Text = $"{this.ApproxFrameCount:N0} frames ({(this.ApproxSizeInMb > 2048 ? this.ApproxSizeInMb / 1024.0 : this.ApproxSizeInMb):F2} {(this.ApproxSizeInMb > 2048 ? "GB" : "MB")})";
 		}
 
 
@@ -108,155 +111,153 @@ namespace LPAP.Forms.Dialogs
 			this.UpdateApproxInfo();
 		}
 
-		private async void button_render_Click(object sender, EventArgs e)
-		{
-			AudioObj audio = this.Audio;
-			int width = this.ParsedResolution.Width;
-			int height = this.ParsedResolution.Height;
-			float frameRate = (float) this.numericUpDown_frameRate.Value;
-			double startSeconds = (double) this.numericUpDown_startSeconds.Value;
-			double endSeconds = (double) this.numericUpDown_endSeconds.Value;
-			bool offload = this.checkBox_offload.Checked;
+        private async void button_render_Click(object sender, EventArgs e)
+        {
+            // --- CANCEL FALL ---
+            if (this._isRendering)
+            {
+                this._renderCts?.Cancel();
+                return;
+            }
 
-			float amplitude = (float) (this.numericUpDown_volume.Value / 100.0m);
+            this._isRendering = true;
+            this.button_render.Text = "Cancel";
+            this.button_render.Enabled = true;
 
-			// If start & end are changed, cut audioobj from audio
-			if (startSeconds > 0 || endSeconds < audio.Duration.TotalSeconds)
-			{
-				long startSample = (long) (startSeconds * audio.SampleRate);
-				long endSample = (long) (endSeconds * audio.SampleRate);
-				audio = await audio.CopyFromSelectionAsync(startSample, endSample);
-			}
+            this._renderCts = new CancellationTokenSource();
+            CancellationToken token = this._renderCts.Token;
 
-			Stopwatch sw = Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
+            string? outputPath = null;
 
-			string? outputPath = null;
+            // Progress 0..1 (growOnly gegen Zittern)
+            IProgress<double> uiProgress = ProgressAdapters.ToProgressBar(this.progressBar_rendering, max: 1000, growOnly: true);
 
-			// Double Reporting from 0.0 - 1.0 (growOnly gegen "Zittern")
-			IProgress<double> progress = ProgressAdapters.ToProgressBar(
-				this.progressBar_rendering, max: 1000, growOnly: true);
+            try
+            {
+                AudioObj audio = this.Audio;
 
-			// Optional: Cancellation aus Dialog (falls du eins hast)
-			// CancellationToken token = this._cts?.Token ?? CancellationToken.None;
-			CancellationToken token = CancellationToken.None;
+                int width = this.ParsedResolution.Width;
+                int height = this.ParsedResolution.Height;
+                float frameRate = (float) this.numericUpDown_frameRate.Value;
 
-			// Offload-Fallback Variablen
-			string? tempFramesDir = null;
-			bool tempFramesDirCreated = false;
+                double startSeconds = (double) this.numericUpDown_startSeconds.Value;
+                double endSeconds = (double) this.numericUpDown_endSeconds.Value;
 
-			try
-			{
-				if (offload)
-				{
-					// --- SSD/OFFLOAD FALLBACK (dein alter Weg, aber RAM-flach dank "framesDir -> NVENC stream") ---
+                float volume = (float) (this.numericUpDown_volume.Value / 100.0m);
 
-					tempFramesDir = await AudioProcessor.RenderVisualizerImagesToTempDirAsync(
-						audio, width, height, frameRate,
-						outputFilePath: null,
-						maxWorkers: this.MaxWorkers,
-						progress: progress,
-						ct: token);
+                // --- 1) SELECTION CUT ---
+                if (startSeconds > 0 || endSeconds < audio.Duration.TotalSeconds)
+                {
+                    long startSample = (long) (startSeconds * audio.SampleRate);
+                    long endSample = (long) (endSeconds * audio.SampleRate);
 
-					tempFramesDirCreated = !string.IsNullOrWhiteSpace(tempFramesDir);
-					if (!tempFramesDirCreated || !Directory.Exists(tempFramesDir))
-					{
-						throw new Exception("Error creating temporary frames directory for offload rendering.");
-					}
+                    audio = await audio.CopyFromSelectionAsync(startSample, endSample).ConfigureAwait(true);
+                }
 
-					// Reset UI
-					this.progressBar_rendering.Invoke(() => this.progressBar_rendering.Value = 0);
+                token.ThrowIfCancellationRequested();
 
-					outputPath = await NvencVideoRenderer.NvencRenderVideoAsync(
-						framesDir: tempFramesDir,
-						width: width,
-						height: height,
-						frameRate: frameRate,
-						audio: audio,
-						amplitude: amplitude,
-						searchPattern: "*.png",
-						outputFilePath: null,
-						options: null,
-						progress: progress,
-						ct: token);
-				}
-				else
-				{
-					// --- PRODUCER→CONSUMER PIPELINE (ohne SSD, ohne Image[], ohne Bitmap/Graphics) ---
+                // --- 2) NORMALIZE / VOLUME ---
+                if (!float.IsNaN(volume) && volume > 0 && Math.Abs(volume - 1.0f) > 1e-4f)
+                {
+                    await audio.NormalizeAsync(volume).ConfigureAwait(true);
+                }
 
-					// Producer: rendert parallel in BGRA Raster und schreibt in bounded Channel
-					var (reader, frameCount) = AudioProcessor.RenderVisualizerFramesBgraChannel(
-						audio: audio,
-						width: width,
-						height: height,
-						frameRate: frameRate,
-						maxWorkers: this.MaxWorkers,
-						channelCapacity: Math.Max(2, this.MaxWorkers * 2),
-						progress: progress,     // Render-Phase (0..1)
-						ct: token);
+                token.ThrowIfCancellationRequested();
 
-					// Reset UI zwischen Render/Encode (optional)
-					this.progressBar_rendering.Invoke(() => this.progressBar_rendering.Value = 0);
+                // --- 3) PHASED PROGRESS ---
+                double renderPhase = 0.35;
 
-					if (Math.Abs(amplitude - 1.0f) > 1e-6f)
-					{
-						await audio.NormalizeAsync(amplitude);
-					}
+                IProgress<double> renderProgress = new Progress<double>(p =>
+                {
+                    uiProgress.Report(Math.Clamp(p, 0, 1) * renderPhase);
+                });
 
-					// Consumer: liest Channel, schreibt Frames in ffmpeg stdin + muxed Audio (RAM -> pipe)
-					outputPath = await NvencVideoRenderer.NvencRenderVideoAsync(
-						frames: reader,
-						frameCount: frameCount,
-						width: width,
-						height: height,
-						frameRate: frameRate,
-						audio: audio,
-						outputFilePath: null,
-						options: null,
-						progress: progress,     // Encode-Phase (ffmpeg out_time_ms)
-						ct: token);
-				}
+                IProgress<double> encodeProgress = new Progress<double>(p =>
+                {
+                    uiProgress.Report(renderPhase + Math.Clamp(p, 0, 1) * (1.0 - renderPhase));
+                });
 
-				if (!string.IsNullOrWhiteSpace(outputPath))
-				{
-					CudaService.Log("Successfully rendered MP4", $"{sw.Elapsed.TotalSeconds:F3} elapsed", 0, "Visualizer");
-					CudaService.Log(outputPath, "", 0, "Visualizer");
-				}
-				else
-				{
-					CudaService.Log("Error rendering video via NVENC", "", 0, "Visualizer");
-				}
-			}
-			catch (OperationCanceledException)
-			{
-				CudaService.Log("Rendering cancelled.", "", 0, "Visualizer");
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex);
-			}
-			finally
-			{
-				this.Audio["visualizer"] = sw.Elapsed.TotalSeconds;
-				sw.Stop();
+                // --- 4) PRODUCER: BGRA FRAMES ---
+                var (reader, frameCount) =
+                    AudioProcessor.RenderVisualizerFramesBgraChannel(
+                        audio,
+                        width,
+                        height,
+                        frameRate,
+                        amplification: (float) (this.numericUpDown_amplification.Value / 100.0m),
+                        maxWorkers: this.MaxWorkers,
+                        channelCapacity: 0,
+                        progress: renderProgress,
+                        ct: token);
 
-				// Nur falls offload genutzt wurde: TempFramesDir löschen
-				try
-				{
-					if (tempFramesDirCreated && !string.IsNullOrWhiteSpace(tempFramesDir) && Directory.Exists(tempFramesDir))
-						Directory.Delete(tempFramesDir, recursive: true);
-				}
-				catch (Exception ex)
-				{
-					CudaService.Log(ex, "Error deleting temporary frames directory", 0, "Visualizer");
-				}
+                // --- 5) CONSUMER: NVENC ---
+                outputPath = await NvencVideoRenderer.NvencRenderVideoAsync(
+                    reader,
+                    frameCount,
+                    width,
+                    height,
+                    frameRate,
+                    audio,
+                    outputFilePath: null,
+                    options: null,
+                    progress: encodeProgress,
+                    ct: token);
 
-				this.progressBar_rendering.Invoke(() => this.progressBar_rendering.Value = 0);
-			}
+                if (!string.IsNullOrWhiteSpace(outputPath))
+                {
+                    double sizeInMb = 0;
+                    try
+                    {
+                        FileInfo fi = new FileInfo(outputPath);
+                        sizeInMb = fi.Length / (1024.0 * 1024.0);
+                    }
+                    catch { }
 
-			this.DialogResult = DialogResult.OK;
-			this.Close();
-		}
+                    CudaService.Log($"Successfully rendered MP4 ({sizeInMb:F2} MB)", $"{sw.Elapsed.TotalSeconds:F3}s", 0, "Visualizer");
+                    CudaService.Log(sw.Elapsed.TotalSeconds.ToString("F1") + " sec.: " + outputPath, "", 0, "Visualizer");
+                    
+                    if (this.checkBox_copyPath.Checked)
+                    {
+                        try
+                        {
+                            Clipboard.SetText(outputPath);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                CudaService.Log("Rendering cancelled by user.", "", 0, "Visualizer");
+            }
+            catch (Exception ex)
+            {
+                CudaService.Log(ex);
+            }
+            finally
+            {
+                sw.Stop();
+
+                this.Audio["visualizer"] = sw.Elapsed.TotalSeconds;
+
+                this._isRendering = false;
+                this.button_render.Text = "Render";
+                this._renderCts?.Dispose();
+                this._renderCts = null;
+
+                try
+                {
+                    this.progressBar_rendering.Invoke(() =>
+                        this.progressBar_rendering.Value = 0);
+                }
+                catch { }
+            }
+
+            this.DialogResult = DialogResult.OK;
+            this.Close();
+        }
 
 
-	}
+    }
 }

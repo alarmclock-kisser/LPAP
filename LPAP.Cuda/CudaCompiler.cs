@@ -482,9 +482,9 @@ namespace LPAP.Cuda
 		public Dictionary<string, Type> GetArguments(string? kernelCode = null, bool silent = false)
 		{
 			kernelCode ??= this.KernelCode;
-			if (string.IsNullOrEmpty(kernelCode) || this.Kernel == null)
+			if (string.IsNullOrEmpty(kernelCode))
 			{
-				if (!silent)
+                if (!silent)
 				{
 					CudaService.Log("Kernel code is empty", this.KernelName ?? "N/A", 1);
 				}
