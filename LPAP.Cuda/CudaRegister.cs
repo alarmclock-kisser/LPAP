@@ -1,1070 +1,758 @@
 ﻿using ManagedCuda;
 using ManagedCuda.BasicTypes;
+using ManagedCuda.VectorTypes;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
-namespace LPAP.Cuda
+namespace LPAP.Cuda;
+
+internal sealed class CudaRegister : IDisposable
 {
-	public class CudaRegister : IDisposable
-	{
-		private readonly ConcurrentDictionary<Guid, CudaMem> memory = [];
-		public IReadOnlyList<CudaMem> Memory => this.memory.Values.ToList();
-
-		public ConcurrentDictionary<CudaStream, int> streams = [];
-
-		private readonly PrimaryContext CTX;
-
-
-		// Properties
-		public long TotalMemory => this.GetTotalMemoryBytes();
-		public long TotalMemoryAvailable => this.GetTotalAvailableBytes();
-        public long TotalMemoryAllocated => this.memory.Values.Sum(m => m.TotalSize);
-		public int RegisteredMemoryObjects => this.memory.Count;
-		public int ThreadsActive => this.streams.Count(s => s.Value > 0);
-		public int ThreadsIdle => this.streams.Count(s => s.Value <= 0);
-		public int MaxThreads => this.CTX.GetDeviceInfo().MaxThreadsPerMultiProcessor;
-
-
-		// Constructor
-		public CudaRegister(PrimaryContext ctx)
-		{
-			this.CTX = ctx;
-
-			this.CTX.SetCurrent();
-		}
-
-		// Enumerable
-		public CudaMem? this[Guid id]
-		{
-			get
-			{
-				if (this.memory.TryGetValue(id, out CudaMem? mem))
-				{
-					return mem;
-				}
-
-				CudaService.Log($"CudaMem with ID {id} not found in register.");
-				return null;
-			}
-		}
-
-		public CudaMem? this[IntPtr indexPointer]
-		{
-			get
-			{
-				if (this.memory.Values.Any(m => m.IndexPointer == indexPointer))
-				{
-					return this.memory.Values.FirstOrDefault(m => m.IndexPointer == indexPointer);
-				}
-
-				CudaService.Log($"CudaMem with IndexPointer {indexPointer} not found in register.");
-				return null;
-			}
-		}
-
-
-		// Methods: Dispose & Free
-		public void Dispose()
-		{
-			CudaService.Log($"Disposing CudaRegister with {this.RegisteredMemoryObjects} registered memory objects and {this.streams.Count} streams ...");
-
-			// Free every CudaMem object
-			foreach (var mem in this.memory.Values)
-			{
-				this.FreeMemory(mem);
-			}
-
-			this.memory.Clear();
-
-			// Dispose all streams
-			foreach (var stream in this.streams.Keys)
-			{
-				try
-				{
-					stream.Dispose();
-				}
-				catch (Exception ex)
-				{
-					CudaService.Log($"Error disposing stream: {ex.Message}");
-				}
-			}
-
-			this.streams.Clear();
-
-			CudaService.Log($"CudaRegister disposed.");
-
-			GC.SuppressFinalize(this);
-		}
-
-		public long FreeMemory(CudaMem mem)
-		{
-			long freed = mem.TotalSize;
-
-			CUdeviceptr[] devicePointers = mem.Pointers.Select(p => new CUdeviceptr(p)).ToArray();
-			foreach (var devicePointer in devicePointers)
-			{
-				try
-				{
-					this.CTX.FreeMemory(devicePointer);
-				}
-				catch (Exception ex)
-				{
-					CudaService.Log(ex, "Error freeing memory");
-				}
-			}
-
-			if (this.memory.TryRemove(mem.Id, out _))
-			{
-				mem.Dispose();
-			}
-			else
-			{
-				freed *= -1;
-			}
-
-			return freed;
-		}
-
-		public long FreeMemory(IntPtr indexPointer)
-		{
-			CudaMem? mem = this[indexPointer];
-			if (mem == null)
-			{
-				return 0;
-			}
-
-			long freed = mem.TotalSize;
-
-			CUdeviceptr[] devicePointers = mem.Pointers.Select(p => new CUdeviceptr(p)).ToArray();
-			foreach (var devicePointer in devicePointers)
-			{
-				try
-				{
-					this.CTX.FreeMemory(devicePointer);
-				}
-				catch (Exception ex)
-				{
-					CudaService.Log(ex, "Error freeing memory");
-				}
-			}
-
-			if (this.memory.TryRemove(mem.Id, out _))
-			{
-				mem.Dispose();
-			}
-			else
-			{
-				freed *= -1;
-			}
-
-			return freed;
-		}
-
-		public long FreeMemory(Guid id)
-		{
-			CudaMem? mem = this[id];
-			if (mem == null)
-			{
-				return 0;
-			}
-
-			long freed = mem.TotalSize;
-			
-			CUdeviceptr[] devicePointers = mem.Pointers.Select(p => new CUdeviceptr(p)).ToArray();
-			foreach (var devicePointer in devicePointers)
-			{
-				try
-				{
-					this.CTX.FreeMemory(devicePointer);
-				}
-				catch (Exception ex)
-				{
-					CudaService.Log(ex, "Error freeing memory");
-				}
-			}
-
-			if (this.memory.TryRemove(mem.Id, out _))
-			{
-				mem.Dispose();
-			}
-			else
-			{
-				freed *= -1;
-			}
-
-			return freed;
-		}
-
-
-		// Methods: Stream(s)
-		internal ulong? CreateStream()
-		{
-			Guid id = Guid.Empty;
-
-			try
-			{
-				this.CTX.SetCurrent();
-				CudaStream stream = new();
-				stream.Synchronize();
-
-				id = Guid.NewGuid();
-				if (this.streams.TryAdd(stream, 0))
-				{
-					return stream.ID;
-				}
-				else
-				{
-					stream.Dispose();
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error creating stream");
-				return null;
-			}
-		}
-
-		public CudaStream? GetStream(ulong? id = null)
-		{
-			int engines = this.CTX.GetDeviceInfo().AsyncEngineCount;
-			int streams = this.streams.Count;
-
-			ulong? streamId = null;
-			CudaStream? stream = null;
-
-			// Finds the stream by ID if provided, or returns stream with lowest value, or creates a new stream if no ID is provided
-			if (id.HasValue)
-			{
-				stream = this.streams.Keys.FirstOrDefault(s => s.ID == id.Value);
-			}
-			else
-			{
-				if (streams < engines)
-				{
-					streamId = this.CreateStream();
-					if (streamId.HasValue)
-					{
-						stream = this.streams.Keys.FirstOrDefault(s => s.ID == streamId.Value);
-					}
-				}
-				else
-				{
-					// Select stream with the lowest value
-					stream = this.streams.Keys.OrderBy(s => this.streams[s]).FirstOrDefault();
-				}
-			}
-
-			if (stream == null)
-			{
-				CudaService.Log("No available stream found or created.", $"{(id.HasValue ? $"ID was {id}" : "")}");
-			}
-
-			return stream;
-		}
-
-		public IEnumerable<CudaStream>? GetManyStreams(int maxCount = 0, IEnumerable<ulong>? ids = null)
-		{
-			if (maxCount <= 0)
-			{
-				maxCount = this.MaxThreads - this.streams.Count();
-			}
-			if (maxCount <= 0 || this.CTX == null)
-			{
-				return null;
-			}
-
-			CudaStream[] created = new CudaStream[maxCount];
-			var results = created.Select((s, i) =>
-			{
-				CudaStream? stream = ids != null && ids.Any() ? this.GetStream(ids.ElementAt(i)) : this.GetStream();
-				if (stream == null)
-				{
-					return null;
-				}
-				created[i] = stream;
-				return stream;
-			});
-
-			foreach(var s in results)
-			{
-				if (s != null && !this.streams.ContainsKey(s))
-				{
-					if (this.streams.TryAdd(s, 0))
-					{
-						s.Synchronize();
-					}
-					else
-					{
-						s.Dispose();
-					}
-				}
-			}
-
-			if (created.Any(s => s == null))
-			{
-				CudaService.Log("Some streams could not be created or retrieved.");
-				return null;
-			}
-
-			return created;
-		}
-
-		public async Task<IEnumerable<CudaStream>?> GetManyStreamsAsync(int maxCount = 0, IEnumerable<ulong>? ids = null)
-		{
-			if (maxCount <= 0)
-			{
-				maxCount = this.MaxThreads - this.streams.Count();
-			}
-			if (maxCount <= 0 || this.CTX == null)
-			{
-				return null;
-			}
-
-			CudaStream[] created = new CudaStream[maxCount];
-			var results = created.Select((s, i) =>
-			{
-				CudaStream? stream = ids != null && ids.Any() ? this.GetStream(ids.ElementAt(i)) : this.GetStream();
-				if (stream == null)
-				{
-					return null;
-				}
-
-				created[i] = stream;
-				return stream;
-			});
-			
-			int added = 0;
-			foreach(var s in results)
-			{
-				if (s != null && !this.streams.ContainsKey(s))
-				{
-					if (this.streams.TryAdd(s, 0))
-					{
-						await Task.Run(s.Synchronize);
-						added++;
-					}
-					else
-					{
-						s.Dispose();
-					}
-				}
-			}
-
-			if (added == 0)
-			{
-				CudaService.Log("No streams could be created or retrieved.");
-				return null;
-			}
-
-			return created;
-		}
-
-
-		// Methods: Allocate
-		public CudaMem? AllocateSingle<T>(IntPtr length) where T : unmanaged
-		{
-			if (length <= 0)
-			{
-				return null;
-			}
-
-			try
-			{
-				CudaDeviceVariable<T> devVariable = new((long) length);
-				var pointer = devVariable.DevicePointer;
-				CudaMem mem = new(pointer, length, typeof(T));
-				if (this.memory.TryAdd(mem.Id, mem))
-				{
-					return mem;
-				}
-				else
-				{
-					devVariable.Dispose();
-					mem.Dispose();
-					CudaService.Log($"Failed to allocate memory for {typeof(T).Name} of length {length}.");
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, $"Error allocating single memory");
-				return null;
-			}
-		}
-
-		public async Task<CudaMem?> AllocateSingleAsync<T>(IntPtr length) where T : unmanaged
-		{
-			if (length <= 0)
-			{
-				return null;
-			}
-
-			// this.CTX.SetCurrent();
-
-			try
-			{
-				var stream = this.GetStream();
-				if (stream == null)
-				{
-					return null;
-				}
-
-				CudaDeviceVariable<T> devVariable = new((long) length, stream);
-				var pointer = devVariable.DevicePointer;
-
-				CudaMem mem = new(pointer, length, typeof(T));
-
-				await Task.Run(stream.Synchronize);
-
-				if (this.memory.TryAdd(mem.Id, mem))
-				{
-					return mem;
-				}
-				else
-				{
-					devVariable.Dispose();
-					mem.Dispose();
-					CudaService.Log($"Failed to allocate memory for {typeof(T).Name} of length {length}.");
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, $"Error allocating single memory (async)");
-				return null;
-			}
-		}
-
-		public CudaMem? AllocateGroup<T>(IntPtr[] lengths) where T : unmanaged
-		{
-			if (lengths.LongLength <= 0 || lengths.Any(l => l <= 0))
-			{
-				return null;
-			}
-
-			try
-			{
-				CudaDeviceVariable<T>[] devVariables = lengths.Select(l => new CudaDeviceVariable<T>((long) l)).ToArray();
-				var pointers = devVariables.Select(v => v.DevicePointer).ToArray();
-				CudaMem mem = new(pointers, lengths, typeof(T));
-				if (this.memory.TryAdd(mem.Id, mem))
-				{
-					return mem;
-				}
-				else
-				{
-					foreach (var devVariable in devVariables)
-					{
-						devVariable.Dispose();
-					}
-					mem.Dispose();
-					CudaService.Log($"Failed to allocate grouped memory for {typeof(T).Name} with lengths {lengths.LongLength + "x " + lengths.FirstOrDefault()}.");
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error allocating grouped memory");
-				return null;
-			}
-		}
-
-		public async Task<CudaMem?> AllocateGroupAsync<T>(IntPtr[] lengths) where T : unmanaged
-		{
-			if (lengths.LongLength <= 0 || lengths.Any(l => l <= 0))
-			{
-				return null;
-			}
-
-			var stream = this.GetStream();
-			if (stream == null)
-			{
-				return null;
-			}
-
-			try
-			{
-				CudaDeviceVariable<T>[] devVariables = lengths.Select(l => new CudaDeviceVariable<T>((long) l, stream)).ToArray();
-				var pointers = devVariables.Select(v => v.DevicePointer).ToArray();
-
-				CudaMem mem = new(pointers, lengths, typeof(T));
-
-				await Task.Run(stream.Synchronize);
-
-				if (this.memory.TryAdd(mem.Id, mem))
-				{
-					return mem;
-				}
-				else
-				{
-					foreach (var devVariable in devVariables)
-					{
-						devVariable.Dispose();
-					}
-					mem.Dispose();
-					CudaService.Log($"Failed to allocate grouped memory for {typeof(T).Name} with lengths {lengths.LongLength + "x " + lengths.FirstOrDefault()}");
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error allocating grouped memory (async)");
-				return null;
-			}
-		}
-
-
-		// Methods: Push data / -chunks
-		public CudaMem? PushData<T>(IEnumerable<T> data) where T : unmanaged
-		{
-			if (data == null || !data.Any())
-			{
-				return null;
-			}
-
-			try
-			{
-				IntPtr length = (nint) data.LongCount();
-				CudaDeviceVariable<T> devVariable = new(length);
-				var pointer = devVariable.DevicePointer;
-
-				this.CTX.CopyToDevice(devVariable.DevicePointer, data.ToArray());
-
-				CudaMem mem = new(pointer, length, typeof(T));
-
-				if (this.memory.TryAdd(mem.Id, mem))
-				{
-					return mem;
-				}
-				else
-				{
-					devVariable.Dispose();
-					mem.Dispose();
-					CudaService.Log($"Failed to push data for {typeof(T).Name} of length {length}.");
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error pushing data");
-				return null;
-			}
-		}
-
-		public CudaMem? PushChunks<T>(IEnumerable<IEnumerable<T>> chunks) where T : unmanaged
-		{
-			if (chunks == null || !chunks.Any())
-			{
-				return null;
-			}
-
-			try
-			{
-				IntPtr[] lengths = chunks.Select(chunk => (nint) chunk.LongCount()).ToArray();
-				CudaDeviceVariable<T>[] devVariables = chunks.Select(chunk => new CudaDeviceVariable<T>((nint) chunk.LongCount())).ToArray();
-				var pointers = devVariables.Select(v => v.DevicePointer).ToArray();
-
-				for (int i = 0; i < chunks.Count(); i++)
-				{
-					this.CTX.CopyToDevice(devVariables[i].DevicePointer, chunks.ElementAt(i).ToArray());
-				}
-
-				CudaMem mem = new(pointers, lengths, typeof(T));
-
-				if (this.memory.TryAdd(mem.Id, mem))
-				{
-					return mem;
-				}
-				else
-				{
-					foreach (var devVariable in devVariables)
-					{
-						devVariable.Dispose();
-					}
-					mem.Dispose();
-					CudaService.Log($"Failed to push chunks for {typeof(T).Name} with lengths {lengths.LongLength + "x " + lengths.FirstOrDefault()}.");
-					return null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error pushing chunks");
-				return null;
-			}
-		}
-
-		public async Task<CudaMem?> PushDataAsync<T>(IEnumerable<T> data, ulong? id = null) where T : unmanaged
-		{
-			CudaMem? mem = null;
-
-			var stream = this.GetStream(id);
-			if (stream == null)
-			{
-				return null;
-			}
-
-			this.streams[stream]++;
-
-			try
-			{
-				IntPtr length = (nint) data.LongCount();
-				CudaDeviceVariable<T> devVariable = new(length, stream);
-				var pointer = devVariable.DevicePointer;
-
-				devVariable.AsyncCopyToDevice(data.ToArray(), stream);
-				await Task.Run(stream.Synchronize);
-
-				mem = new(pointer, length, typeof(T));
-				if (!this.memory.TryAdd(mem.Id, mem))
-				{
-					devVariable.Dispose();
-					mem.Dispose();
-					CudaService.Log($"Failed to push data for {typeof(T).Name} of length {length}.");
-					mem = null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, $"Error pushing data (async)");
-			}
-			finally
-			{
-				this.streams[stream]--;
-				GC.Collect();
-			}
-
-			return mem;
-		}
-
-		public async Task<CudaMem?> PushChunksAsync<T>(IEnumerable<IEnumerable<T>> chunks, ulong? id = null) where T : unmanaged
-		{
-			CudaMem? mem = null;
-			var stream = this.GetStream(id);
-			if (stream == null)
-			{
-				return null;
-			}
-			this.streams[stream]++;
-
-			try
-			{
-				IntPtr[] lengths = chunks.Select(chunk => (nint) chunk.LongCount()).ToArray();
-				CudaDeviceVariable<T>[] devVariables = chunks.Select(chunk => new CudaDeviceVariable<T>((nint) chunk.LongCount(), stream)).ToArray();
-				var pointers = devVariables.Select(v => v.DevicePointer).ToArray();
-
-				for (int i = 0; i < chunks.Count(); i++)
-				{
-					devVariables[i].AsyncCopyToDevice(chunks.ElementAt(i).ToArray(), stream);
-				}
-
-				await Task.Run(stream.Synchronize);
-				
-				mem = new(pointers, lengths, typeof(T));
-				if (!this.memory.TryAdd(mem.Id, mem))
-				{
-					foreach (var devVariable in devVariables)
-					{
-						devVariable.Dispose();
-					}
-
-					mem.Dispose();
-					CudaService.Log($"Failed to push chunks for {typeof(T).Name} with lengths {lengths.LongLength + "x " + lengths.FirstOrDefault()}.");
-					mem = null;
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, $"Error pushing chunks (async)");
-			}
-			finally
-			{
-				this.streams[stream]--;
-				GC.Collect();
-			}
-
-			return mem;
-		}
-
-
-		// Methods: Pull data / -chunks
-		public T[] PullData<T>(IntPtr indexPointer, bool keep = false) where T : unmanaged
-		{
-			CudaMem? mem = this[indexPointer];
-
-			if (mem == null || mem.Pointers.Length == 0 || mem.Lengths.Length == 0)
-			{
-				return [];
-			}
-
-			try
-			{
-				CUdeviceptr devicePointer = new(mem.IndexPointer);
-				CudaDeviceVariable<T> devVariable = new(devicePointer, mem.IndexLength);
-				T[] data = new T[mem.IndexLength];
-
-				this.CTX.CopyToHost(data, devVariable.DevicePointer);
-
-				// this.CTX.Synchronize();
-
-				if (!keep)
-				{
-					this.FreeMemory(mem);
-				}
-
-				return data;
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error pulling data");
-				return [];
-			}
-		}
-
-		public List<T[]> PullChunks<T>(IntPtr indexPointer, bool keep = false) where T : unmanaged
-		{
-			CudaMem? mem = this[indexPointer];
-
-			if (mem == null || mem.Pointers.Length == 0 || mem.Lengths.Length == 0)
-			{
-				return [];
-			}
-
-			try
-			{
-				List<T[]> chunks = [];
-				CUdeviceptr[] devicePointers = mem.Pointers.Select(p => new CUdeviceptr(p)).ToArray();
-				CudaDeviceVariable<T>[] devVariables = devicePointers.Select((ptr, i) => new CudaDeviceVariable<T>(ptr, mem.Lengths[i])).ToArray();
-
-				for (int i = 0; i < devVariables.Length; i++)
-				{
-					T[] chunkData = new T[mem.Lengths[i]];
-					this.CTX.CopyToHost(chunkData, devVariables[i].DevicePointer);
-					chunks.Add(chunkData);
-				}
-
-				this.CTX.Synchronize();
-
-				if (!keep)
-				{
-					this.FreeMemory(mem);
-				}
-
-				return chunks;
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error pulling chunks");
-				return [];
-			}
-		}
-
-		public async Task<T[]> PullDataAsync<T>(IntPtr indexPointer, bool keep = false, ulong? id = null) where T : unmanaged
-		{
-			CudaMem? mem = this[indexPointer];
-			if (mem == null || mem.Count <= 0)
-			{
-				return [];
-			}
-
-			try
-			{
-				T[] data = new T[mem.Count];
-				var stream = this.GetStream(id);
-				if (stream == null)
-				{
-					return data;
-				}
-				this.streams[stream]++;
-
-				// this.CTX.SetCurrent();
-
-				CUdeviceptr devicePtr = new(mem.IndexPointer);
-
-				// Native asynchroner Transfer: Device → Host
-				int byteSize = data.Length * System.Runtime.InteropServices.Marshal.SizeOf<T>();
-				unsafe
-				{
-					fixed (T* pData = data)
-					{
-						var res = DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
-							new CUdeviceptr((IntPtr) pData),
-							devicePtr,
-							(SizeT) byteSize,
-							stream.Stream
-						);
-						if (res != CUResult.Success)
-						{
-							throw new CudaException(res);
-						}
-					}
-				}
-
-				await Task.Run(stream.Synchronize);
-
-				this.streams[stream]--;
-
-				if (!keep)
-				{
-					this.FreeMemory(mem);
-				}
-
-				return data;
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error pulling data (async)");
-				return [];
-			}
-			finally
-			{
-				GC.Collect();
-			}
-		}
-
-		public async Task<List<T[]>> PullChunksAsync<T>(IntPtr indexPointer, bool keep = false, ulong? id = null) where T : unmanaged
-		{
-			CudaMem? mem = this[indexPointer];
-			if (mem == null || mem.Count <= 0)
-			{
-				return [];
-			}
-			
-			try
-			{
-				List<T[]> chunks = [];
-				var stream = this.GetStream(id);
-				if (stream == null)
-				{
-					return chunks;
-				}
-				this.streams[stream]++;
-
-				// this.CTX.SetCurrent();
-				
-				CUdeviceptr[] devicePointers = mem.Pointers.Select(p => new CUdeviceptr(p)).ToArray();
-				for (int i = 0; i < devicePointers.Length; i++)
-				{
-					T[] data = new T[mem.Lengths[i]];
-					CUdeviceptr devicePtr = devicePointers[i];
-
-					// Native asynchroner Transfer: Device → Host
-					int byteSize = data.Length * System.Runtime.InteropServices.Marshal.SizeOf<T>();
-					unsafe
-					{
-						fixed (T* pData = data)
-						{
-							var res = DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
-								new CUdeviceptr((IntPtr) pData),
-								devicePtr,
-								(SizeT) byteSize,
-								stream.Stream
-							);
-							if (res != CUResult.Success)
-							{
-								throw new CudaException(res);
-							}
-						}
-					}
-
-					chunks.Add(data);
-				}
-
-				await Task.Run(stream.Synchronize);
-
-				this.streams[stream]--;
-
-				if (!keep)
-				{
-					this.FreeMemory(mem);
-				}
-
-				return chunks;
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error pulling chunks (async)");
-				return [];
-			}
-			finally
-			{
-				GC.Collect();
-			}
-		}
-
-
-		/// <summary>
-		/// Zero-alloc: kopiert Device -> vorhandenes Host-Array (Async memcpy + Stream sync).
-		/// dest.Length muss >= count sein.
-		/// </summary>
-		public async Task CopyToHostIntoAsync<T>(
-			IntPtr deviceIndexPointer,
-			T[] dest,
-			int count,
-			bool keep = true,
-			ulong? id = null) where T : unmanaged
-		{
-			if (count <= 0)
-			{
-				return;
-			}
-
-			if (dest == null || dest.Length < count)
-			{
-				throw new ArgumentException("dest too small");
-			}
-
-			var mem = this[deviceIndexPointer];
-			if (mem == null || mem.IndexPointer == nint.Zero)
-			{
-				throw new InvalidOperationException("Device pointer invalid");
-			}
-
-			var stream = this.GetStream(id);
-			if (stream == null)
-			{
-				throw new InvalidOperationException("No CUDA stream available");
-			}
-
-			this.streams[stream]++;
-
-			try
-			{
-				int byteSize = count * Marshal.SizeOf<T>();
-				var src = new CUdeviceptr(mem.IndexPointer);
-
-				unsafe
-				{
-					fixed (T* pDest = dest)
-					{
-						var dst = new CUdeviceptr((IntPtr) pDest);
-
-						var res = DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
-							dst,
-							src,
-							(SizeT) byteSize,
-							stream.Stream);
-
-						if (res != CUResult.Success)
-						{
-							throw new CudaException(res);
-						}
-					}
-				}
-
-				await Task.Run(stream.Synchronize).ConfigureAwait(false);
-
-				if (!keep)
-				{
-					this.FreeMemory(mem);
-				}
-			}
-			finally
-			{
-				this.streams[stream]--;
-			}
-		}
-
-		/// <summary>
-		/// Optional: Host -> Device in vorhandenen Device-Puffer (zero-alloc).
-		/// </summary>
-		public async Task CopyToDeviceFromAsync<T>(
-			IntPtr deviceIndexPointer,
-			T[] src,
-			int count,
-			ulong? id = null) where T : unmanaged
-		{
-			if (count <= 0)
-			{
-				return;
-			}
-
-			if (src == null || src.Length < count)
-			{
-				throw new ArgumentException("src too small");
-			}
-
-			var mem = this[deviceIndexPointer];
-			if (mem == null || mem.IndexPointer == nint.Zero)
-			{
-				throw new InvalidOperationException("Device pointer invalid");
-			}
-
-			var stream = this.GetStream(id);
-			if (stream == null)
-			{
-				throw new InvalidOperationException("No CUDA stream available");
-			}
-
-			this.streams[stream]++;
-
-			try
-			{
-				int byteSize = count * Marshal.SizeOf<T>();
-				var dst = new CUdeviceptr(mem.IndexPointer);
-
-				unsafe
-				{
-					fixed (T* pSrc = src)
-					{
-						var srcPtr = new CUdeviceptr((IntPtr) pSrc);
-
-						var res = DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
-							dst,
-							srcPtr,
-							(SizeT) byteSize,
-							stream.Stream);
-
-						if (res != CUResult.Success)
-						{
-							throw new CudaException(res);
-						}
-					}
-				}
-
-				await Task.Run(stream.Synchronize).ConfigureAwait(false);
-			}
-			finally
-			{
-				this.streams[stream]--;
-			}
-		}
-
-
-
-		public long GetTotalMemoryBytes()
-		{
-			long memory = 0;
-			try
-			{
-				memory = this.CTX.GetTotalDeviceMemorySize();
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex);
-			}
-			return memory;
-		}
-
-		public long GetTotalAvailableBytes()
-		{
-			long memory = 0;
-			try
-			{
-				memory = this.CTX.GetFreeDeviceMemorySize();
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error getting available memory.");
-			}
-			return memory;
-		}
-
-	}
+    private readonly PrimaryContext _ctx;
+    private readonly ConcurrentDictionary<Guid, CudaMem> _memory = new();
+    private readonly ConcurrentDictionary<CudaStream, int> _streams = new();
+    private bool _disposed;
+
+    internal CudaRegister(PrimaryContext ctx)
+    {
+        this._ctx = ctx ?? throw new ArgumentNullException(nameof(ctx));
+        this.EnsureContext();
+    }
+
+    public long TotalFree => this.GetTotalFreeMemory();
+    public long TotalMemory => this.GetTotalMemory();
+    public long TotalAllocated => this._memory.Values.Sum(m => m.TotalSize);
+    public int RegisteredMemoryObjects => this._memory.Count;
+    public int ThreadsActive => this._streams.Count(kv => kv.Value > 0);
+    public int ThreadsIdle => this._streams.Count(kv => kv.Value <= 0);
+    public int MaxThreads => this.GetProcessorsCount();
+
+    public IReadOnlyCollection<CudaMem> Memory => (IReadOnlyCollection<CudaMem>) this._memory.Values;
+
+    public CudaMem? this[Guid id] => this._memory.TryGetValue(id, out var mem) ? mem : null;
+
+    public CudaMem? this[IntPtr indexPointer]
+        => this._memory.Values.FirstOrDefault(m => m.IndexPointer == indexPointer);
+
+    public void Dispose()
+    {
+        if (this._disposed)
+        {
+            return;
+        }
+
+        this._disposed = true;
+
+        foreach (var mem in this._memory.Values.ToArray())
+        {
+            this.FreeMemory(mem);
+        }
+        this._memory.Clear();
+
+        foreach (var stream in this._streams.Keys)
+        {
+            try
+            {
+                stream.Dispose();
+            }
+            catch (Exception ex)
+            {
+                CudaLog.Warn("Failed to dispose CUDA stream", ex.Message);
+            }
+        }
+
+        this._streams.Clear();
+        GC.SuppressFinalize(this);
+    }
+
+    private void EnsureContext()
+    {
+        this._ctx.SetCurrent();
+    }
+
+    public long GetTotalMemory()
+    {
+        this.EnsureContext();
+        return this._ctx.GetTotalDeviceMemorySize();
+    }
+
+    public long GetTotalFreeMemory()
+    {
+        this.EnsureContext();
+        return this._ctx.GetFreeDeviceMemorySize();
+    }
+
+    public int GetProcessorsCount()
+    {
+        this.EnsureContext();
+        return this._ctx.GetDeviceInfo().MultiProcessorCount;
+    }
+
+    public long FreeMemory(CudaMem mem)
+    {
+        this.EnsureContext();
+        long freed = mem.TotalSize;
+
+        foreach (var devicePtr in mem.DevicePointers)
+        {
+            try
+            {
+                this._ctx.FreeMemory(devicePtr);
+            }
+            catch (Exception ex)
+            {
+                CudaLog.Warn("Failed to free device pointer", ex.Message);
+            }
+        }
+
+        if (this._memory.TryRemove(mem.Id, out _))
+        {
+            mem.Dispose();
+        }
+        else
+        {
+            freed = -freed;
+        }
+
+        return freed;
+    }
+
+    public long FreeMemory(Guid id)
+    {
+        var mem = this[id];
+        return mem == null ? 0 : this.FreeMemory(mem);
+    }
+
+    public long FreeMemory(IntPtr indexPointer)
+    {
+        var mem = this[indexPointer];
+        return mem == null ? 0 : this.FreeMemory(mem);
+    }
+
+    public CudaStream? GetStream(ulong? id = null)
+    {
+        this.EnsureContext();
+        CudaStream? stream = null;
+
+        if (id.HasValue)
+        {
+            stream = this._streams.Keys.FirstOrDefault(s => s.ID == id.Value);
+            if (stream == null)
+            {
+                CudaLog.Warn($"Stream {id.Value} not found");
+            }
+
+            return stream;
+        }
+
+        int engines = this._ctx.GetDeviceInfo().AsyncEngineCount;
+        if (this._streams.Count < engines)
+        {
+            stream = this.CreateStream();
+            if (stream != null)
+            {
+                return stream;
+            }
+        }
+
+        stream = this._streams.OrderBy(kv => kv.Value).FirstOrDefault().Key;
+        if (stream == null)
+        {
+            CudaLog.Warn("No CUDA streams available");
+        }
+
+        return stream;
+    }
+
+    internal IEnumerable<CudaStream>? GetManyStreams(int maxCount = 0, IEnumerable<ulong>? ids = null)
+    {
+        this.EnsureContext();
+        if (maxCount <= 0)
+        {
+            maxCount = Math.Max(1, this.MaxThreads - this._streams.Count);
+        }
+        if (maxCount <= 0)
+        {
+            return null;
+        }
+
+        var result = new List<CudaStream>(maxCount);
+        var idList = ids?.ToList();
+        for (int i = 0; i < maxCount; i++)
+        {
+            CudaStream? stream;
+            if (idList != null && i < idList.Count)
+            {
+                stream = this.GetStream(idList[i]);
+            }
+            else
+            {
+                stream = this.GetStream();
+            }
+
+            if (stream == null)
+            {
+                break;
+            }
+
+            result.Add(stream);
+        }
+
+        return result.Count == maxCount ? result : null;
+    }
+
+    internal async Task<IEnumerable<CudaStream>?> GetManyStreamsAsync(int maxCount = 0, IEnumerable<ulong>? ids = null)
+    {
+        var streams = this.GetManyStreams(maxCount, ids);
+        if (streams == null)
+        {
+            return null;
+        }
+
+        foreach (var stream in streams)
+        {
+            if (!this._streams.ContainsKey(stream) && this._streams.TryAdd(stream, 0))
+            {
+                await Task.Run(stream.Synchronize).ConfigureAwait(false);
+            }
+        }
+
+        return streams;
+    }
+
+    private CudaStream? CreateStream()
+    {
+        try
+        {
+            var stream = new CudaStream();
+            if (this._streams.TryAdd(stream, 0))
+            {
+                stream.Synchronize();
+                return stream;
+            }
+
+            stream.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to create CUDA stream", ex.Message);
+        }
+
+        return null;
+    }
+
+    public CudaMem? AllocateSingle<T>(IntPtr length) where T : unmanaged
+    {
+        this.EnsureContext();
+        if (length == IntPtr.Zero || length.ToInt64() <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var deviceVariable = new CudaDeviceVariable<T>((long)length);
+            var mem = new CudaMem(deviceVariable.DevicePointer, length, typeof(T));
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            deviceVariable.Dispose();
+            mem.Dispose();
+            CudaLog.Warn("Failed to track allocated CUDA memory");
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Allocation failed", ex.Message);
+        }
+
+        return null;
+    }
+
+    public async Task<CudaMem?> AllocateSingleAsync<T>(IntPtr length) where T : unmanaged
+    {
+        this.EnsureContext();
+        if (length == IntPtr.Zero || length.ToInt64() <= 0)
+        {
+            return null;
+        }
+
+        var stream = this.GetStream();
+        if (stream == null)
+        {
+            return null;
+        }
+
+        this._streams[stream]++;
+        try
+        {
+            var deviceVariable = new CudaDeviceVariable<T>((long)length, stream);
+            var mem = new CudaMem(deviceVariable.DevicePointer, length, typeof(T));
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            deviceVariable.Dispose();
+            mem.Dispose();
+            CudaLog.Warn("Failed to track async allocated CUDA memory");
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Async allocation failed", ex.Message);
+        }
+        finally
+        {
+            this._streams[stream]--;
+        }
+
+        return null;
+    }
+
+    public CudaMem? AllocateGroup<T>(IntPtr[] lengths) where T : unmanaged
+    {
+        this.EnsureContext();
+        if (lengths.Length == 0 || lengths.Any(l => l == IntPtr.Zero || l.ToInt64() <= 0))
+        {
+            return null;
+        }
+
+        try
+        {
+            var deviceVars = lengths.Select(l => new CudaDeviceVariable<T>((long)l)).ToArray();
+            var pointers = deviceVars.Select(v => v.DevicePointer).ToArray();
+            var mem = new CudaMem(pointers, lengths, typeof(T));
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            foreach (var deviceVar in deviceVars)
+            {
+                deviceVar.Dispose();
+            }
+            mem.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Group allocation failed", ex.Message);
+        }
+
+        return null;
+    }
+
+    public async Task<CudaMem?> AllocateGroupAsync<T>(IntPtr[] lengths) where T : unmanaged
+    {
+        this.EnsureContext();
+        if (lengths.Length == 0 || lengths.Any(l => l == IntPtr.Zero || l.ToInt64() <= 0))
+        {
+            return null;
+        }
+
+        var stream = this.GetStream();
+        if (stream == null)
+        {
+            return null;
+        }
+
+        this._streams[stream]++;
+        try
+        {
+            var deviceVars = lengths.Select(l => new CudaDeviceVariable<T>((long)l, stream)).ToArray();
+            var pointers = deviceVars.Select(v => v.DevicePointer).ToArray();
+            var mem = new CudaMem(pointers, lengths, typeof(T));
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            foreach (var deviceVar in deviceVars)
+            {
+                deviceVar.Dispose();
+            }
+            mem.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Async group allocation failed", ex.Message);
+        }
+        finally
+        {
+            this._streams[stream]--;
+        }
+
+        return null;
+    }
+
+    public CudaMem? PushData<T>(IEnumerable<T> data) where T : unmanaged
+    {
+        this.EnsureContext();
+        var materialized = data?.ToArray();
+        if (materialized == null || materialized.Length == 0)
+        {
+            return null;
+        }
+
+        IntPtr length = (nint)materialized.LongLength;
+        try
+        {
+            var deviceVar = new CudaDeviceVariable<T>(materialized.Length);
+            this._ctx.CopyToDevice(deviceVar.DevicePointer, materialized);
+            var mem = new CudaMem(deviceVar.DevicePointer, length, typeof(T));
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            deviceVar.Dispose();
+            mem.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to push data", ex.Message);
+        }
+
+        return null;
+    }
+
+    public CudaMem? PushChunks<T>(IEnumerable<IEnumerable<T>> chunks) where T : unmanaged
+    {
+        this.EnsureContext();
+        var chunkList = chunks?.Select(c => c?.ToArray() ?? []).ToList();
+        if (chunkList == null || chunkList.Count == 0)
+        {
+            return null;
+        }
+
+        IntPtr[] lengths = chunkList.Select(chunk => (nint)chunk.LongLength).ToArray();
+        try
+        {
+            var deviceVars = lengths.Select(l => new CudaDeviceVariable<T>((long)l)).ToArray();
+            for (int i = 0; i < deviceVars.Length; i++)
+            {
+                if (chunkList[i].Length > 0)
+                {
+                    this._ctx.CopyToDevice(deviceVars[i].DevicePointer, chunkList[i]);
+                }
+            }
+
+            var mem = new CudaMem(deviceVars.Select(v => v.DevicePointer).ToArray(), lengths, typeof(T));
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            foreach (var deviceVar in deviceVars)
+            {
+                deviceVar.Dispose();
+            }
+            mem.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to push chunks", ex.Message);
+        }
+
+        return null;
+    }
+
+    public async Task<CudaMem?> PushDataAsync<T>(IEnumerable<T> data, ulong? streamId = null) where T : unmanaged
+    {
+        this.EnsureContext();
+        var materialized = data?.ToArray();
+        if (materialized == null || materialized.Length == 0)
+        {
+            return null;
+        }
+
+        var stream = this.GetStream(streamId);
+        if (stream == null)
+        {
+            return null;
+        }
+
+        this._streams[stream]++;
+        try
+        {
+            var deviceVar = new CudaDeviceVariable<T>(materialized.Length, stream);
+            deviceVar.AsyncCopyToDevice(materialized, stream);
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+
+            var mem = new CudaMem(deviceVar.DevicePointer, (nint)materialized.LongLength, typeof(T));
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            deviceVar.Dispose();
+            mem.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to push data asynchronously", ex.Message);
+        }
+        finally
+        {
+            this._streams[stream]--;
+        }
+
+        return null;
+    }
+
+    public async Task<CudaMem?> PushChunksAsync<T>(IEnumerable<IEnumerable<T>> chunks, ulong? streamId = null) where T : unmanaged
+    {
+        this.EnsureContext();
+        var chunkList = chunks?.Select(chunk => chunk?.ToArray() ?? []).ToList();
+        if (chunkList == null || chunkList.Count == 0)
+        {
+            return null;
+        }
+
+        var stream = this.GetStream(streamId);
+        if (stream == null)
+        {
+            return null;
+        }
+
+        this._streams[stream]++;
+        IntPtr[] lengths = chunkList.Select(chunk => (nint)chunk.LongLength).ToArray();
+        try
+        {
+            var deviceVars = lengths.Select(l => new CudaDeviceVariable<T>((long)l, stream)).ToArray();
+            for (int i = 0; i < deviceVars.Length; i++)
+            {
+                if (chunkList[i].Length > 0)
+                {
+                    deviceVars[i].AsyncCopyToDevice(chunkList[i], stream);
+                }
+            }
+
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+
+            var mem = new CudaMem(deviceVars.Select(v => v.DevicePointer).ToArray(), lengths, typeof(T));
+            if (this._memory.TryAdd(mem.Id, mem))
+            {
+                return mem;
+            }
+
+            foreach (var deviceVar in deviceVars)
+            {
+                deviceVar.Dispose();
+            }
+            mem.Dispose();
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to push chunks asynchronously", ex.Message);
+        }
+        finally
+        {
+            this._streams[stream]--;
+        }
+
+        return null;
+    }
+
+    public T[] PullData<T>(IntPtr indexPointer, bool keep = false) where T : unmanaged
+    {
+        this.EnsureContext();
+        var mem = this[indexPointer];
+        if (mem == null || mem.ElementType != typeof(T) || mem.IndexLength == IntPtr.Zero)
+        {
+            return [];
+        }
+
+        long count = mem.IndexLength.ToInt64();
+        if (count <= 0 || count > int.MaxValue)
+        {
+            return [];
+        }
+
+        T[] data = new T[(int)count];
+        var deviceVar = new CudaDeviceVariable<T>(new CUdeviceptr(indexPointer), (SizeT)(count * Marshal.SizeOf<T>()));
+        this._ctx.CopyToHost(data, deviceVar.DevicePointer);
+        this._ctx.Synchronize();
+
+        if (!keep)
+        {
+            this.FreeMemory(mem);
+        }
+
+        return data;
+    }
+
+    public List<T[]> PullChunks<T>(IntPtr indexPointer, bool keep = false) where T : unmanaged
+    {
+        this.EnsureContext();
+        var mem = this[indexPointer];
+        if (mem == null || mem.Count == 0)
+        {
+            return [];
+        }
+
+        List<T[]> chunks = new(mem.Count);
+        for (int i = 0; i < mem.Count; i++)
+        {
+            long count = mem.Lengths[i].ToInt64();
+            if (count <= 0 || count > int.MaxValue)
+            {
+                chunks.Add([]);
+                continue;
+            }
+
+            var deviceVar = new CudaDeviceVariable<T>(mem.DevicePointers[i], count);
+            T[] host = new T[count];
+            this._ctx.CopyToHost(host, deviceVar.DevicePointer);
+            chunks.Add(host);
+        }
+
+        this._ctx.Synchronize();
+        if (!keep)
+        {
+            this.FreeMemory(mem);
+        }
+
+        return chunks;
+    }
+
+    public async Task<T[]> PullDataAsync<T>(IntPtr indexPointer, bool keep = false, ulong? streamId = null) where T : unmanaged
+    {
+        this.EnsureContext();
+        var mem = this[indexPointer];
+        if (mem == null || mem.ElementType != typeof(T))
+        {
+            return [];
+        }
+
+        long count = mem.IndexLength.ToInt64();
+        if (count <= 0 || count > int.MaxValue)
+        {
+            return [];
+        }
+
+        var stream = this.GetStream(streamId);
+        if (stream == null)
+        {
+            return [];
+        }
+
+        this._streams[stream]++;
+        try
+        {
+            T[] data = new T[count];
+            int byteSize = data.Length * Marshal.SizeOf<T>();
+            unsafe
+            {
+                fixed (T* ptr = data)
+                {
+                    var result = ManagedCuda.DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
+                        new CUdeviceptr((IntPtr)ptr),
+                        new CUdeviceptr(indexPointer),
+                        (SizeT)byteSize,
+                        stream.Stream);
+                    if (result != CUResult.Success)
+                    {
+                        throw new CudaException(result);
+                    }
+                }
+            }
+
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+
+            if (!keep)
+            {
+                this.FreeMemory(mem);
+            }
+
+            return data;
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to pull data asynchronously", ex.Message);
+            return [];
+        }
+        finally
+        {
+            this._streams[stream]--;
+        }
+    }
+
+    public async Task<List<T[]>> PullChunksAsync<T>(IntPtr indexPointer, bool keep = false, ulong? streamId = null) where T : unmanaged
+    {
+        this.EnsureContext();
+        var mem = this[indexPointer];
+        if (mem == null || mem.Count == 0)
+        {
+            return [];
+        }
+
+        var stream = this.GetStream(streamId);
+        if (stream == null)
+        {
+            return [];
+        }
+
+        this._streams[stream]++;
+        var chunks = new List<T[]>(mem.Count);
+        try
+        {
+            for (int i = 0; i < mem.Count; i++)
+            {
+                long count = mem.Lengths[i].ToInt64();
+                if (count <= 0 || count > int.MaxValue)
+                {
+                    chunks.Add([]);
+                    continue;
+                }
+
+                T[] data = new T[count];
+                int byteSize = data.Length * Marshal.SizeOf<T>();
+                unsafe
+                {
+                    fixed (T* ptr = data)
+                    {
+                        var result = ManagedCuda.DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
+                            new CUdeviceptr((IntPtr)ptr),
+                            new CUdeviceptr(indexPointer),
+                            (SizeT)byteSize,
+                            stream.Stream);
+                        if (result != CUResult.Success)
+                        {
+                            throw new CudaException(result);
+                        }
+                    }
+                }
+
+                chunks.Add(data);
+            }
+
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+
+            if (!keep)
+            {
+                this.FreeMemory(mem);
+            }
+
+            return chunks;
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Failed to pull chunks asynchronously", ex.Message);
+            return [];
+        }
+        finally
+        {
+            this._streams[stream]--;
+        }
+    }
 }

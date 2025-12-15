@@ -5,496 +5,196 @@ using ManagedCuda.VectorTypes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Text;
 using System.Threading.Tasks;
 
-namespace LPAP.Cuda
+namespace LPAP.Cuda;
+
+internal sealed class CudaFourier : IDisposable
 {
-	public class CudaFourier : IDisposable
-	{
-
-
-		private readonly PrimaryContext CTX;
-		private readonly CudaRegister Register;
-
-
-		// Constructor
-		public CudaFourier(PrimaryContext ctx, CudaRegister register)
-		{
-			this.CTX = ctx;
-			this.Register = register;
-		}
-
-
-		// Method: Dispose
-		public void Dispose()
-		{
-
-		}
-
-
-		// Methods: FFT (Fourier Transform forward)
-		public IntPtr PerformFft(IntPtr indexPointer, bool keep = false)
-		{
-			// Check initialized & input pointer
-			if (this.Register == null || this.CTX == null || indexPointer == nint.Zero)
-			{
-				return nint.Zero;
-			}
-
-			// Get memory from register
-			var mem = this.Register[indexPointer];
-			if (mem == null || mem.IndexPointer == nint.Zero || mem.IndexLength == nint.Zero)
-			{
-				CudaService.Log("Memory not found or invalid pointer.");
-				return nint.Zero;
-			}
-
-			// Allocate output memory
-			var outputMem = this.Register.AllocateGroup<float2>(mem.Lengths.Select(l => l).ToArray());
-			if (outputMem == null || outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Could not allocate output memory.");
-				return indexPointer;
-			}
-
-			// Use Context instead of stream(s)	
-			// this.CTX.Synchronize();
-
-			// Check if all lengths are the same (else create plan for each length in loop)
-			try
-			{
-				if (mem.Lengths.Distinct().Count() == 1)
-				{
-					int nx = (int) mem.IndexLength.ToInt64();
-					cufftType fftType = cufftType.R2C;
-					int batch = 1;
-
-					CudaFFTPlan1D plan = new(nx, fftType, batch);
-					for (int i = 0; i < mem.Count; i++)
-					{
-						CUdeviceptr inPtr = new(mem.Pointers[i]);
-						CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-						plan.Exec(inPtr, outPtr);
-						outputMem.Pointers[i] = outPtr.Pointer;
-					}
-					plan.Dispose();
-				}
-				else
-				{
-					int[] nx = mem.Lengths.Select(l => (int) l.ToInt64()).ToArray();
-					cufftType fftType = cufftType.R2C;
-					int batch = 1;
-
-					for (int i = 0; i < mem.Count; i++)
-					{
-						CudaFFTPlan1D plan = new(nx[i], fftType, batch);
-						CUdeviceptr inPtr = new(mem.Pointers[i]);
-						CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-						plan.Exec(inPtr, outPtr);
-						outputMem.Pointers[i] = outPtr.Pointer;
-						plan.Dispose();
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error during FFT execution.");
-				this.Register.FreeMemory(outputMem);
-				return indexPointer;
-			}
-
-			// Check output memory
-			if (outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("FFT execution failed, result pointer is null.");
-				this.Register.FreeMemory(outputMem);
-				return indexPointer;
-			}
-
-			// Synchronize context
-			// this.CTX.Synchronize();
-
-			// Optionally free input memory
-			if (!keep)
-			{
-				this.Register.FreeMemory(indexPointer);
-			}
-
-			return outputMem.IndexPointer;
-		}
-
-		public async Task<IntPtr> PerformFftAsync(IntPtr pointer, bool keep = false)
-		{
-			if (this.Register == null || this.CTX == null || pointer == nint.Zero)
-			{
-				return nint.Zero;
-			}
-
-			var mem = this.Register[pointer];
-			if (mem == null || mem.IndexPointer == nint.Zero || mem.IndexLength == nint.Zero)
-			{
-				CudaService.Log("Memory not found or invalid pointer.");
-				return nint.Zero;
-			}
-
-			var outputMem = await this.Register.AllocateGroupAsync<float2>(mem.Lengths.Select(l => l).ToArray());
-			if (outputMem == null || outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Could not allocate output memory.");
-				return pointer;
-			}
-
-			try
-			{
-				var stream = this.Register.GetStream();
-				if (stream == null)
-				{
-					this.Register.FreeMemory(outputMem);
-					return pointer;
-				}
-
-				int nx = (int) mem.IndexLength.ToInt64();
-				cufftType fftType = cufftType.R2C;
-				int batch = 1;
-				CudaFFTPlan1D plan = new(nx, fftType, batch, stream.Stream);
-
-				for (int i = 0; i < mem.Count; i++)
-				{
-					CUdeviceptr inPtr = new(mem.Pointers[i]);
-					CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-					plan.Exec(inPtr, outPtr);
-					outputMem.Pointers[i] = outPtr.Pointer;
-				}
-
-				await Task.Run(stream.Synchronize);
-				plan.Dispose();
-
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error during FFT execution.");
-				this.Register.FreeMemory(outputMem);
-				return pointer;
-			}
-
-			if (outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("FFT execution failed, result pointer is null.");
-				this.Register.FreeMemory(outputMem);
-				return pointer;
-			}
-
-			if (!keep)
-			{
-				this.Register.FreeMemory(pointer);
-			}
-
-			return outputMem.IndexPointer;
-		}
-
-		public async Task<IntPtr> PerformFftManyAsync(IntPtr indexPointer, bool keep = false)
-		{
-			if (this.Register == null || this.CTX == null || indexPointer == nint.Zero)
-			{
-				return nint.Zero;
-			}
-
-			var mem = this.Register[indexPointer];
-			if (mem == null || mem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Memory not found or invalid pointer.");
-				return nint.Zero;
-			}
-
-			IntPtr[] lengths = mem.Lengths;
-
-			var outputMem = await this.Register.AllocateGroupAsync<float2>(lengths);
-			if (outputMem == null || outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Could not allocate output memory.");
-				return indexPointer;
-			}
-
-			try
-			{
-				var stream = this.Register.GetStream();
-				if (stream == null)
-				{
-					this.Register.FreeMemory(outputMem);
-					return indexPointer;
-				}
-
-				int rank = 1;
-				cufftType fftType = cufftType.R2C;
-				CudaFFTPlanMany plan = new(rank, lengths.Select(l => (int)l.ToInt64()).ToArray(), mem.Count, fftType, stream.Stream);
-
-				for (int i = 0; i < mem.Count; i++)
-				{
-					CUdeviceptr inPtr = new(mem.Pointers[i]);
-					CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-
-					plan.Exec(inPtr, outPtr);
-
-					outputMem.Pointers[i] = outPtr.Pointer;
-				}
-
-				if (outputMem.IndexPointer == nint.Zero)
-				{
-					CudaService.Log("FFT-many execution failed, result pointer is null.");
-					this.Register.FreeMemory(outputMem);
-					return indexPointer;
-				}
-
-				await Task.Run(stream.Synchronize);
-
-				if (!keep)
-				{
-					this.Register.FreeMemory(indexPointer);
-				}
-
-				plan.Dispose();
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error during FFT-many execution.");
-				return indexPointer;
-			}
-
-			return outputMem.IndexPointer;
-		}
-
-
-		// Methods: IFFT (Fourier Transform inverse)
-		public IntPtr PerformIfft(IntPtr indexPointer, bool keep = false)
-		{
-			// Check initialized & input pointer
-			if (this.Register == null || this.CTX == null || indexPointer == nint.Zero)
-			{
-				return nint.Zero;
-			}
-
-			// Get memory from register
-			var mem = this.Register[indexPointer];
-			if (mem == null || mem.IndexPointer == nint.Zero || mem.IndexLength == nint.Zero)
-			{
-				CudaService.Log("Memory not found or invalid pointer.");
-				return nint.Zero;
-			}
-
-			// Allocate output memory
-			var outputMem = this.Register.AllocateGroup<float>(mem.Lengths.Select(l => l).ToArray());
-			if (outputMem == null || outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Could not allocate output memory.");
-				return indexPointer;
-			}
-
-			// Use Context instead of stream(s)	
-			// this.CTX.Synchronize();
-
-			// Check if all lengths are the same (else create plan for each length in loop)
-			try
-			{
-				if (mem.Lengths.Distinct().Count() == 1)
-				{
-					int nx = (int) mem.IndexLength.ToInt64();
-					cufftType fftType = cufftType.C2R;
-					int batch = 1;
-
-					CudaFFTPlan1D plan = new(nx, fftType, batch);
-					for (int i = 0; i < mem.Count; i++)
-					{
-						CUdeviceptr inPtr = new(mem.Pointers[i]);
-						CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-						plan.Exec(inPtr, outPtr);
-						outputMem.Pointers[i] = outPtr.Pointer;
-					}
-					plan.Dispose();
-				}
-				else
-				{
-					int[] nx = mem.Lengths.Select(l => (int) l.ToInt64()).ToArray();
-					cufftType fftType = cufftType.C2R;
-					int batch = 1;
-
-					for (int i = 0; i < mem.Count; i++)
-					{
-						CudaFFTPlan1D plan = new(nx[i], fftType, batch);
-						CUdeviceptr inPtr = new(mem.Pointers[i]);
-						CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-						plan.Exec(inPtr, outPtr);
-						outputMem.Pointers[i] = outPtr.Pointer;
-						plan.Dispose();
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error during IFFT execution.");
-				this.Register.FreeMemory(outputMem);
-				return indexPointer;
-			}
-
-			// Check output memory
-			if (outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("FFT execution failed, result pointer is null.");
-				this.Register.FreeMemory(outputMem);
-				return indexPointer;
-			}
-
-			// Synchronize context
-			// this.CTX.Synchronize();
-
-			// Optionally free input memory
-			if (!keep)
-			{
-				this.Register.FreeMemory(indexPointer);
-			}
-
-			return outputMem.IndexPointer;
-		}
-
-		public async Task<IntPtr> PerformIfftAsync(IntPtr pointer, bool keep = false)
-		{
-			if (this.Register == null || this.CTX == null || pointer == nint.Zero)
-			{
-				return nint.Zero;
-			}
-
-			var mem = this.Register[pointer];
-			if (mem == null || mem.IndexPointer == nint.Zero || mem.IndexLength == nint.Zero)
-			{
-				CudaService.Log("Memory not found or invalid pointer.");
-				return nint.Zero;
-			}
-
-			var outputMem = await this.Register.AllocateGroupAsync<float>(mem.Lengths.Select(l => l).ToArray());
-			if (outputMem == null || outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Could not allocate output memory.");
-				return pointer;
-			}
-
-			try
-			{
-				var stream = this.Register.GetStream();
-				if (stream == null)
-				{
-					this.Register.FreeMemory(outputMem);
-					return pointer;
-				}
-
-				int nx = (int) mem.IndexLength.ToInt64();
-				cufftType fftType = cufftType.C2R;
-				int batch = 1;
-				CudaFFTPlan1D plan = new(nx, fftType, batch, stream.Stream);
-
-				for (int i = 0; i < mem.Count; i++)
-				{
-					CUdeviceptr inPtr = new(mem.Pointers[i]);
-					CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-					plan.Exec(inPtr, outPtr);
-					outputMem.Pointers[i] = outPtr.Pointer;
-				}
-
-				await Task.Run(stream.Synchronize);
-				plan.Dispose();
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error during IFFT execution.");
-				this.Register.FreeMemory(outputMem);
-				return pointer;
-			}
-
-			if (outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("IFFT execution failed, result pointer is null.");
-				this.Register.FreeMemory(outputMem);
-				return pointer;
-			}
-
-			if (!keep)
-			{
-				this.Register.FreeMemory(pointer);
-			}
-
-			return outputMem.IndexPointer;
-		}
-
-		public async Task<IntPtr> PerformIfftManyAsync(IntPtr indexPointer, bool keep = false)
-		{
-			if (this.Register == null || this.CTX == null || indexPointer == nint.Zero)
-			{
-				return nint.Zero;
-			}
-
-			var mem = this.Register[indexPointer];
-			if (mem == null || mem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Memory not found or invalid pointer.");
-				return nint.Zero;
-			}
-
-			IntPtr[] lengths = mem.Lengths;
-
-			var outputMem = await this.Register.AllocateGroupAsync<float>(lengths);
-			if (outputMem == null || outputMem.IndexPointer == nint.Zero)
-			{
-				CudaService.Log("Could not allocate output memory.");
-				return indexPointer;
-			}
-
-			try
-			{
-				var stream = this.Register.GetStream();
-				if (stream == null)
-				{
-					this.Register.FreeMemory(outputMem);
-					return indexPointer;
-				}
-
-				int rank = 1;
-				cufftType fftType = cufftType.C2R;
-				CudaFFTPlanMany plan = new(rank, lengths.Select(l => (int) l.ToInt64()).ToArray(), mem.Count, fftType, stream.Stream);
-
-				for (int i = 0; i < mem.Count; i++)
-				{
-					CUdeviceptr inPtr = new(mem.Pointers[i]);
-					CUdeviceptr outPtr = new(outputMem.Pointers[i]);
-
-					plan.Exec(inPtr, outPtr);
-
-					outputMem.Pointers[i] = outPtr.Pointer;
-				}
-
-				if (outputMem.IndexPointer == nint.Zero)
-				{
-					CudaService.Log("IFFT-many execution failed, result pointer is null.");
-					this.Register.FreeMemory(outputMem);
-					return indexPointer;
-				}
-
-				await Task.Run(stream.Synchronize);
-
-				if (!keep)
-				{
-					this.Register.FreeMemory(indexPointer);
-				}
-
-				plan.Dispose();
-			}
-			catch (Exception ex)
-			{
-				CudaService.Log(ex, "Error during IFFT-many execution.");
-				return indexPointer;
-			}
-
-			return outputMem.IndexPointer;
-		}
-
-	}
+    private readonly PrimaryContext _ctx;
+    private readonly CudaRegister _register;
+
+    internal CudaFourier(PrimaryContext ctx, CudaRegister register)
+    {
+        this._ctx = ctx ?? throw new ArgumentNullException(nameof(ctx));
+        this._register = register ?? throw new ArgumentNullException(nameof(register));
+    }
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+    }
+
+    public IntPtr PerformFft(IntPtr indexPointer, bool keep = false)
+        => this.ExecuteTransform(indexPointer, keep, cufftType.R2C, inverse: false);
+
+    public IntPtr PerformIfft(IntPtr indexPointer, bool keep = false)
+        => this.ExecuteTransform(indexPointer, keep, cufftType.C2R, inverse: true);
+
+    public Task<IntPtr> PerformFftAsync(IntPtr indexPointer, bool keep = false)
+        => this.ExecuteTransformAsync(indexPointer, keep, cufftType.R2C, inverse: false, preferPlanReuse: false);
+
+    public Task<IntPtr> PerformIfftAsync(IntPtr indexPointer, bool keep = false)
+        => this.ExecuteTransformAsync(indexPointer, keep, cufftType.C2R, inverse: true, preferPlanReuse: false);
+
+    public Task<IntPtr> PerformFftManyAsync(IntPtr indexPointer, bool keep = false)
+        => this.ExecuteTransformAsync(indexPointer, keep, cufftType.R2C, inverse: false, preferPlanReuse: true);
+
+    public Task<IntPtr> PerformIfftManyAsync(IntPtr indexPointer, bool keep = false)
+        => this.ExecuteTransformAsync(indexPointer, keep, cufftType.C2R, inverse: true, preferPlanReuse: true);
+
+    private IntPtr ExecuteTransform(IntPtr indexPointer, bool keep, cufftType transformType, bool inverse)
+    {
+        var mem = this._register[indexPointer];
+        if (!this.ValidateInput(mem, inverse))
+        {
+            return IntPtr.Zero;
+        }
+
+        var outputMem = inverse
+            ? this._register.AllocateGroup<float>(mem!.Lengths)
+            : this._register.AllocateGroup<float2>(mem!.Lengths);
+
+        if (outputMem == null)
+        {
+            return indexPointer;
+        }
+
+        Dictionary<int, CudaFFTPlan1D>? plans = null;
+        try
+        {
+            plans = [];
+            for (int i = 0; i < mem.Count; i++)
+            {
+                int length = (int)mem.Lengths[i].ToInt64();
+                if (!plans.TryGetValue(length, out var plan))
+                {
+                    plan = new CudaFFTPlan1D(length, transformType, 1);
+                    plans[length] = plan;
+                }
+
+                plan.Exec(new CUdeviceptr(mem.Pointers[i]), new CUdeviceptr(outputMem.Pointers[i]));
+            }
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("FFT execution failed", ex.Message);
+            this._register.FreeMemory(outputMem);
+            return indexPointer;
+        }
+        finally
+        {
+            if (plans != null)
+            {
+                foreach (var plan in plans.Values)
+                {
+                    plan.Dispose();
+                }
+            }
+        }
+
+        if (!keep)
+        {
+            this._register.FreeMemory(indexPointer);
+        }
+
+        return outputMem.IndexPointer;
+    }
+
+    private async Task<IntPtr> ExecuteTransformAsync(IntPtr indexPointer, bool keep, cufftType transformType, bool inverse, bool preferPlanReuse)
+    {
+        var mem = this._register[indexPointer];
+        if (!this.ValidateInput(mem, inverse))
+        {
+            return IntPtr.Zero;
+        }
+
+        var outputMem = inverse
+            ? await this._register.AllocateGroupAsync<float>(mem!.Lengths).ConfigureAwait(false)
+            : await this._register.AllocateGroupAsync<float2>(mem!.Lengths).ConfigureAwait(false);
+
+        if (outputMem == null)
+        {
+            return indexPointer;
+        }
+
+        var stream = this._register.GetStream();
+        if (stream == null)
+        {
+            this._register.FreeMemory(outputMem);
+            return indexPointer;
+        }
+
+        Dictionary<int, CudaFFTPlan1D>? cachedPlans = preferPlanReuse ? new() : null;
+        try
+        {
+            for (int i = 0; i < mem!.Count; i++)
+            {
+                int length = (int)mem.Lengths[i].ToInt64();
+                CudaFFTPlan1D plan;
+                if (cachedPlans != null)
+                {
+                    if (!cachedPlans.TryGetValue(length, out plan!))
+                    {
+                        plan = new CudaFFTPlan1D(length, transformType, 1, stream.Stream);
+                        cachedPlans[length] = plan;
+                    }
+                }
+                else
+                {
+                    plan = new CudaFFTPlan1D(length, transformType, 1, stream.Stream);
+                }
+
+                plan.Exec(new CUdeviceptr(mem.Pointers[i]), new CUdeviceptr(outputMem.Pointers[i]));
+
+                if (cachedPlans == null)
+                {
+                    plan.Dispose();
+                }
+            }
+
+            await Task.Run(stream.Synchronize).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Error("Async FFT execution failed", ex.Message);
+            this._register.FreeMemory(outputMem);
+            return indexPointer;
+        }
+        finally
+        {
+            if (cachedPlans != null)
+            {
+                foreach (var plan in cachedPlans.Values)
+                {
+                    plan.Dispose();
+                }
+            }
+        }
+
+        if (!keep)
+        {
+            this._register.FreeMemory(indexPointer);
+        }
+
+        return outputMem.IndexPointer;
+    }
+
+    private bool ValidateInput(CudaMem? mem, bool inverse)
+    {
+        if (mem == null || mem.IndexPointer == IntPtr.Zero || mem.Count == 0)
+        {
+            CudaLog.Warn("CudaFourier input memory invalid");
+            return false;
+        }
+
+        var expectedType = inverse ? typeof(float2) : typeof(float);
+        if (mem.ElementType != expectedType)
+        {
+            CudaLog.Warn("CudaFourier unexpected element type", $"Expected {expectedType.Name}, got {mem.ElementType.Name}");
+            return false;
+        }
+
+        return true;
+    }
 }

@@ -2,753 +2,387 @@
 using ManagedCuda.BasicTypes;
 using ManagedCuda.NVRTC;
 using ManagedCuda.VectorTypes;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 
-namespace LPAP.Cuda
+namespace LPAP.Cuda;
+
+internal sealed class CudaCompiler : IDisposable
 {
-	public class CudaCompiler
-	{
-		// ----- ----- ATTRIBUTES ----- ----- \\
-		private readonly PrimaryContext Context;
-
-		public CudaKernel? Kernel = null;
-		public string? KernelName = null;
-		public string? KernelFile = null;
-		public string? KernelCode = null;
-
-
-		public List<string> SourceFiles => this.GetCuFiles();
-		public List<string> CompiledFiles => this.GetPtxFiles();
-
-
-		internal string KernelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "LPAP.Cuda", "Kernels");
-
-		// ----- ----- CONSTRUCTORS ----- ----- \\
-		public CudaCompiler(PrimaryContext context)
-		{
-			this.Context = context;
-
-			// If deployed kernelpath does not exist like that
-			if (!Directory.Exists(this.KernelPath))
-			{
-				this.KernelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "LPAP.Cuda", "Kernels");
-				if (!Directory.Exists(this.KernelPath))
-				{
-					this.KernelPath = string.Empty;
-				}
-			}
-
-			// Compile all kernels
-			this.CompileAll(false, true);
-		}
-
-
-
-		// Dispose & Unload
-		public void Dispose()
-		{
-			// Dispose of kernels
-			this.UnloadKernel();
-		}
-
-		public void UnloadKernel()
-		{
-			// Unload kernel
-			if (this.Kernel != null)
-			{
-				try
-				{
-					this.Context.UnloadKernel(this.Kernel);
-				}
-				catch (Exception ex)
-				{
-					CudaService.Log("Failed to unload kernel", ex.Message, 1);
-				}
-				this.Kernel = null;
-			}
-		}
-
-
-		// Get files
-		public List<string> GetPtxFiles(string? path = null)
-		{
-			path ??= Path.Combine(this.KernelPath, "PTX");
-
-			// Get all PTX files in kernel path
-			string[] files = Directory.GetFiles(path, "*.ptx").Select(f => Path.GetFullPath(f)).ToArray();
-
-			// Return files
-			return files.ToList();
-		}
-
-		public List<string> GetCuFiles(string? path = null)
-		{
-			path ??= Path.Combine(this.KernelPath, "CU");
-
-			// Get all CU files in kernel path
-			string[] files = Directory.GetFiles(path, "*.cu").Select(f => Path.GetFullPath(f)).ToArray();
-
-			// Return files
-			return files.ToList();
-		}
-
-		public string? SelectLatestKernel()
-		{
-			string[] files = this.CompiledFiles.ToArray();
-
-			// Get file info (last modified), sort by last modified date, select latest
-			FileInfo[] fileInfos = files.Select(f => new FileInfo(f)).OrderByDescending(f => f.LastWriteTime).ToArray();
-
-			string latestFile = fileInfos.FirstOrDefault()?.FullName ?? "";
-			string latestName = Path.GetFileNameWithoutExtension(latestFile) ?? "";
-			if (string.IsNullOrEmpty(latestFile) || string.IsNullOrEmpty(latestName))
-			{
-				CudaService.Log("No compiled kernels found", "", 1);
-				return null;
-			}
-
-			return latestName;
-		}
-
-
-		// Compile
-		public void CompileAll(bool silent = false, bool logErrors = false)
-		{
-			List<string> sourceFiles = this.SourceFiles;
-
-			// Compile all source files
-			foreach (string sourceFile in sourceFiles)
-			{
-				string? ptx = this.CompileKernel(sourceFile, silent);
-				if (string.IsNullOrEmpty(ptx) && logErrors)
-				{
-					CudaService.Log("Compilation failed: ", Path.GetFileNameWithoutExtension(sourceFile), 1);
-				}
-			}
-		}
-
-		public string? CompileKernel(string filepath, bool silent = false)
-		{
-			if (this.Context == null)
-			{
-				if (!silent)
-				{
-					CudaService.Log("No CUDA available", "", 1);
-				}
-				return null;
-			}
-
-			// If file is not a .cu file, but raw kernel string, compile that
-			if (Path.GetExtension(filepath) != ".cu")
-			{
-				return this.CompileString(filepath, silent);
-			}
-
-			string kernelName = Path.GetFileNameWithoutExtension(filepath);
-
-			string logpath = Path.Combine(this.KernelPath, "Logs", kernelName + ".log");
-
-			Stopwatch sw = Stopwatch.StartNew();
-			if (!silent)
-			{
-				CudaService.Log("Compiling kernel '" + kernelName + "'");
-			}
-
-			// Load kernel file
-			string kernelCode = File.ReadAllText(filepath);
-
-
-			CudaRuntimeCompiler rtc = new(kernelCode, kernelName);
-
-			try
-			{
-				// Compile kernel
-				rtc.Compile([]);
-				string log = rtc.GetLogAsString();
-
-				if (log.Length > 0)
-				{
-					// Count double \n
-					int count = log.Split(["\n\n"], StringSplitOptions.None).Length - 1;
-					if (!silent)
-					{
-						CudaService.Log("Compiled with warnings", count.ToString(), 1);
-					}
-					File.WriteAllText(logpath, log);
-				}
-
-				sw.Stop();
-				long deltaMicros = sw.ElapsedTicks / (Stopwatch.Frequency / (1000L * 1000L));
-				if (!silent)
-				{
-					CudaService.Log("Compiled within " + deltaMicros + " µs", "Repo\\" + Path.GetRelativePath(this.KernelPath, logpath), 1);
-				}
-
-				// Get ptx code
-				byte[] ptxCode = rtc.GetPTX();
-
-				// Export ptx
-				string ptxPath = Path.Combine(this.KernelPath, "PTX", kernelName + ".ptx");
-				File.WriteAllBytes(ptxPath, ptxCode);
-
-				if (!silent)
-				{
-					CudaService.Log("PTX exported", ptxPath, 1);
-				}
-
-				return ptxPath;
-			}
-			catch (Exception ex)
-			{
-				File.WriteAllText(logpath, rtc.GetLogAsString());
-				CudaService.Log(ex.Message, ex.InnerException?.Message ?? "", 1);
-
-				return null;
-			}
-
-		}
-
-		public string? CompileString(string kernelString, bool silent = false)
-		{
-			if (this.Context == null)
-			{
-				if (!silent)
-				{
-					CudaService.Log("No CUDA available", "", 1);
-				}
-				return null;
-			}
-
-			string kernelName = kernelString.Split("void ")[1].Split("(")[0];
-
-			string logpath = Path.Combine(this.KernelPath, "Logs", kernelName + ".log");
-
-			Stopwatch sw = Stopwatch.StartNew();
-			if (!silent)
-			{
-				CudaService.Log("Compiling kernel '" + kernelName + "'");
-			}
-
-			// Load kernel file
-			string kernelCode = kernelString;
-
-			// Save also the kernel string as .c file
-			string cPath = Path.Combine(this.KernelPath, "CU", kernelName + ".cu");
-			File.WriteAllText(cPath, kernelCode);
-
-
-			CudaRuntimeCompiler rtc = new(kernelCode, kernelName);
-
-			try
-			{
-				// Compile kernel
-				rtc.Compile([]);
-				string log = rtc.GetLogAsString();
-
-				if (log.Length > 0)
-				{
-					// Count double \n
-					int count = log.Split(["\n\n"], StringSplitOptions.None).Length - 1;
-					if (!silent)
-					{
-						CudaService.Log("Compiled with warnings", count.ToString(), 1);
-					}
-					File.WriteAllText(logpath, rtc.GetLogAsString());
-				}
-
-
-				sw.Stop();
-				long deltaMicros = sw.ElapsedTicks / (Stopwatch.Frequency / (1000L * 1000L));
-				if (!silent)
-				{
-					CudaService.Log("Compiled within " + deltaMicros + " µs", "Repo\\" + Path.GetRelativePath(this.KernelPath, logpath), 1);
-				}
-
-
-				// Get ptx code
-				byte[] ptxCode = rtc.GetPTX();
-
-				// Export ptx
-				string ptxPath = Path.Combine(this.KernelPath, "PTX", kernelName + ".ptx");
-				File.WriteAllBytes(ptxPath, ptxCode);
-
-				if (!silent)
-				{
-					CudaService.Log("PTX exported", ptxPath, 1);
-				}
-
-				return ptxPath;
-			}
-			catch (Exception ex)
-			{
-				File.WriteAllText(logpath, rtc.GetLogAsString());
-				CudaService.Log(ex.Message, ex.InnerException?.Message ?? "", 1);
-
-				return null;
-			}
-		}
-
-		public string? PrecompileKernelString(string kernelString, bool silent = false)
-		{
-			// Check contains "extern c"
-			if (!kernelString.Contains("extern \"C\""))
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string does not contain 'extern \"C\"'", "", 1);
-				}
-				return null;
-			}
-
-			// Check contains "__global__ "
-			if (!kernelString.Contains("__global__"))
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string does not contain '__global__'", "", 1);
-				}
-				return null;
-			}
-
-			// Check contains "void "
-			if (!kernelString.Contains("void "))
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string does not contain 'void '", "", 1);
-				}
-				return null;
-			}
-
-			// Check contains int
-			if (!kernelString.Contains("int ") && !kernelString.Contains("long "))
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string does not contain 'int ' (for array length)", "", 1);
-				}
-				return null;
-			}
-
-			// Check if every bracket is closed (even amount) for {} and () and []
-			int open = kernelString.Count(c => c == '{');
-			int close = kernelString.Count(c => c == '}');
-			if (open != close)
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string has unbalanced brackets", " { } ", 1);
-				}
-				return null;
-			}
-			open = kernelString.Count(c => c == '(');
-			close = kernelString.Count(c => c == ')');
-			if (open != close)
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string has unbalanced brackets", " ( ) ", 1);
-				}
-				return null;
-			}
-			open = kernelString.Count(c => c == '[');
-			close = kernelString.Count(c => c == ']');
-			if (open != close)
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string has unbalanced brackets", " [ ] ", 1);
-				}
-				return null;
-			}
-
-			// Check if kernel contains "blockIdx.x" and "blockDim.x" and "threadIdx.x"
-			if (!kernelString.Contains("blockIdx.x") || !kernelString.Contains("blockDim.x") || !kernelString.Contains("threadIdx.x"))
-			{
-				if (!silent)
-				{
-					CudaService.Log("Kernel string should contain 'blockIdx.x', 'blockDim.x' and 'threadIdx.x'", "", 2);
-				}
-			}
-
-			// Get name between "void " and "("
-			int start = kernelString.IndexOf("void ") + "void ".Length;
-			int end = kernelString.IndexOf("(", start);
-			string name = kernelString.Substring(start, end - start);
-
-			// Trim every line ends from empty spaces (split -> trim -> aggregate)
-			kernelString = kernelString.Split("\n").Select(x => x.TrimEnd()).Aggregate((x, y) => x + "\n" + y);
-
-			// Log name
-			if (!silent)
-			{
-				CudaService.Log("Succesfully precompiled kernel string", "Name: " + name, 1);
-			}
-
-			return name;
-		}
-
-
-		// Load
-		public CudaKernel? LoadKernel(string kernelName, bool silent = false)
-		{
-			if (this.Context == null)
-			{
-				CudaService.Log("No CUDA context available", "", 1);
-				return null;
-			}
-
-			// Unload?
-			if (this.Kernel != null)
-			{
-				this.UnloadKernel();
-			}
-
-			// Get kernel path
-			string kernelPath = Path.Combine(this.KernelPath, "PTX", kernelName + ".ptx");
-
-			// Get log path
-			string logpath = Path.Combine(this.KernelPath, "Logs", kernelName + ".log");
-
-			// Log
-			Stopwatch sw = Stopwatch.StartNew();
-			if (!silent)
-			{
-				CudaService.Log("Started loading kernel " + kernelName);
-			}
-
-			// Try to load kernel
-			try
-			{
-				// Load ptx code
-				byte[] ptxCode = File.ReadAllBytes(kernelPath);
-
-				string cuPath = Path.Combine(this.KernelPath, "CU", kernelName + ".cu");
-
-				// Load kernel
-				this.Kernel = this.Context.LoadKernelPTX(ptxCode, kernelName);
-				this.KernelName = kernelName;
-				this.KernelFile = kernelPath;
-				this.KernelCode = File.ReadAllText(cuPath);
-			}
-			catch (Exception ex)
-			{
-				if (!silent)
-				{
-					CudaService.Log("Failed to load kernel " + kernelName, ex.Message, 1);
-					string logMsg = ex.Message + Environment.NewLine + Environment.NewLine + ex.InnerException?.Message ?? "";
-					File.WriteAllText(logpath, logMsg);
-				}
-				this.Kernel = null;
-			}
-
-			// Log
-			sw.Stop();
-			long deltaMicros = sw.ElapsedTicks / (Stopwatch.Frequency / (1000L * 1000L));
-			if (!silent)
-			{
-				CudaService.Log("Kernel loaded within " + deltaMicros.ToString("N0") + " µs", "", 2);
-			}
-
-			return this.Kernel;
-		}
-
-
-		// Argument extraction
-		public Type GetArgumentType(string typeName)
-		{
-			// Pointers are always IntPtr (containing *)
-			if (typeName.Contains("*"))
-			{
-				return typeof(IntPtr);
-			}
-
-			string typeIdentifier = typeName.Split(' ').LastOrDefault()?.Trim() ?? "void";
-			Type type = typeIdentifier switch
-			{
-				"int" => typeof(int),
-				"float" => typeof(float),
-				"double" => typeof(double),
-				"char" => typeof(char),
-				"bool" => typeof(bool),
-				"void" => typeof(void),
-				"byte" => typeof(byte),
-				_ => typeof(void)
-			};
-
-			return type;
-		}
-
-		public Dictionary<string, Type> GetArguments(string? kernelCode = null, bool silent = false)
-		{
-			kernelCode ??= this.KernelCode;
-			if (string.IsNullOrEmpty(kernelCode))
-			{
-                if (!silent)
-				{
-					CudaService.Log("Kernel code is empty", this.KernelName ?? "N/A", 1);
-				}
-				return [];
-			}
-
-			Dictionary<string, Type> arguments = [];
-
-			int index = kernelCode.IndexOf("__global__ void");
-			if (index == -1)
-			{
-				if (!silent)
-				{
-					CudaService.Log($"'__global__ void' not found", this.KernelName ?? "N/A", 1);
-				}
-				return [];
-			}
-
-			index = kernelCode.IndexOf("(", index);
-			if (index == -1)
-			{
-				if (!silent)
-				{
-					CudaService.Log($"'(' not found", this.KernelName ?? "N/A", 1);
-				}
-				return [];
-			}
-
-			int endIndex = kernelCode.IndexOf(")", index);
-			if (endIndex == -1)
-			{
-				if (!silent)
-				{
-					CudaService.Log($"')' not found", this.KernelName ?? "N/A", 1);
-				}
-				return [];
-			}
-
-			string[] args = kernelCode.Substring(index + 1, endIndex - index - 1).Split(',').Select(x => x.Trim()).ToArray();
-
-			// Get loaded kernels function args
-			for (int i = 0; i < args.Length; i++)
-			{
-				string name = args[i].Split(' ').LastOrDefault() ?? "N/A";
-				string typeName = args[i].Replace(name, "").Trim();
-				Type type = this.GetArgumentType(typeName);
-
-				// Add to dictionary
-				arguments.Add(name, type);
-			}
-
-			return arguments;
-		}
-
-		public Dictionary<string, Type>? GetKernelArguments(string? kernelName = null)
-		{
-			if (string.IsNullOrEmpty(kernelName))
-			{
-				kernelName = this.KernelName;
-			}
-
-			if (string.IsNullOrEmpty(kernelName))
-			{
-				if (this.Kernel != null)
-				{
-					kernelName = this.KernelName;
-					return this.GetArguments(this.KernelCode, false);
-				}
-
-				CudaService.Log("No kernel loaded", "", 1);
-				return null;
-			}
-
-			// Get kernel code
-			string cuPath = Path.Combine(this.KernelPath, "CU", kernelName + ".cu");
-			if (!File.Exists(cuPath))
-			{
-				CudaService.Log("Kernel code file not found", cuPath, 1);
-				return null;
-			}
-
-			string kernelCode = File.ReadAllText(cuPath);
-			return this.GetArguments(kernelCode, false);
-		}
-
-
-		// Merge args for execution
-		public object[] MergeArgumentsAudio(CUdeviceptr inputPointer, CUdeviceptr outputPointer, int sampleRate = 44100, int channels = 2, int bitdepth = 32, Dictionary<string, object>? namedArguments = null)
-		{
-			// Get kernel argument definitions
-			Dictionary<string, Type> args = this.GetArguments(null, false);
-
-			// Create array for kernel arguments
-			object[] kernelArgs = new object[args.Count];
-			int pointersCount = 0;
-			
-			// Integrate invariables if name fits (contains)
-			for (int i = 0; i < kernelArgs.Length; i++)
-			{
-				string name = args.ElementAt(i).Key;
-				Type type = args.ElementAt(i).Value;
-				if (pointersCount == 0 && type == typeof(IntPtr))
-				{
-					kernelArgs[i] = inputPointer;
-					pointersCount++;
-					CudaService.Log($"In-pointer: <{inputPointer}>", "", 1);
-				}
-				else if (pointersCount == 1 && type == typeof(IntPtr))
-				{
-					kernelArgs[i] = outputPointer;
-					pointersCount++;
-					CudaService.Log($"Out-pointer: <{outputPointer}>", "", 1);
-				}
-				else if (name.Contains("sample") && type == typeof(int))
-				{
-					CudaService.Log($"SampleRate: [{sampleRate}]", "", 1);
-				}
-				else if (name.Contains("chan") && type == typeof(int))
-				{
-					kernelArgs[i] = channels;
-					CudaService.Log($"Channels: [{channels}]", "", 1);
-				}
-				else if (name.Contains("bit") && type == typeof(int))
-				{
-					kernelArgs[i] = bitdepth;
-					CudaService.Log($"Bits: [{bitdepth}]", "", 1);
-				}
-				else
-				{
-					// Check if argument is in arguments array
-					if (namedArguments != null && namedArguments.Count > 0)
-					{
-						for (int j = 0; j < namedArguments.Count; j++)
-						{
-							if (name.Equals(args.ElementAt(j).Key, StringComparison.CurrentCultureIgnoreCase))
-							{
-								if (namedArguments.TryGetValue(name, out object? value))
-								{
-									kernelArgs[i] = value;
-									CudaService.Log($"Named argument: {name} = {value}", "", 1);
-									break;
-								}
-								else
-								{
-									CudaService.Log($"Named argument '{name}' not found in provided arguments", "", 1);
-									kernelArgs[i] = 0;
-								}
-							}
-						}
-					}
-
-					// If not found, set to 0
-					if (kernelArgs[i] == null)
-					{
-						kernelArgs[i] = 0;
-					}
-				}
-			}
-
-			return kernelArgs;
-		}
-
-		public object[] MergeArgumentsImage(CUdeviceptr inputPointer, CUdeviceptr outputPointer, int width, int height, int channels, int bitdepth, object[] arguments, bool silent = false)
-		{
-			// Get kernel argument definitions
-			Dictionary<string, Type> args = this.GetArguments(null, silent);
-
-			// Create array for kernel arguments
-			object[] kernelArgs = new object[args.Count];
-
-			int pointersCount = 0;
-			// Integrate invariables if name fits (contains)
-			for (int i = 0; i < kernelArgs.Length; i++)
-			{
-				string name = args.ElementAt(i).Key;
-				Type type = args.ElementAt(i).Value;
-
-				if (pointersCount == 0 && type == typeof(IntPtr))
-				{
-					kernelArgs[i] = inputPointer;
-					pointersCount++;
-
-					if (!silent)
-					{
-						CudaService.Log($"In-pointer: <{inputPointer}>", "", 1);
-					}
-				}
-				else if (pointersCount == 1 && type == typeof(IntPtr))
-				{
-					kernelArgs[i] = outputPointer;
-					pointersCount++;
-
-					if (!silent)
-					{
-						CudaService.Log($"Out-pointer: <{outputPointer}>", "", 1);
-					}
-				}
-				else if (name.Contains("width") && type == typeof(int))
-				{
-					kernelArgs[i] = width;
-					
-					if (!silent)
-					{
-						CudaService.Log($"Width: [{width}]", "", 1);
-					}
-				}
-				else if (name.Contains("height") && type == typeof(int))
-				{
-					kernelArgs[i] = height;
-
-					if (!silent)
-					{
-						CudaService.Log($"Height: [{height}]", "", 1);
-					}
-				}
-				else if (name.Contains("chan") && type == typeof(int))
-				{
-					kernelArgs[i] = channels;
-
-					if (!silent)
-					{
-						CudaService.Log($"Channels: [{channels}]", "", 1);
-					}
-				}
-				else if (name.Contains("bit") && type == typeof(int))
-				{
-					kernelArgs[i] = bitdepth;
-
-					if (!silent)
-					{
-						CudaService.Log($"Bits: [{bitdepth}]", "", 1);
-					}
-				}
-				else
-				{
-					// Check if argument is in arguments array
-					for (int j = 0; j < arguments.Length; j++)
-					{
-						if (name == args.ElementAt(j).Key)
-						{
-							kernelArgs[i] = arguments[j];
-							break;
-						}
-					}
-
-					// If not found, set to 0
-					if (kernelArgs[i] == null)
-					{
-						kernelArgs[i] = 0;
-					}
-				}
-			}
-
-			// DEBUG LOG
-			//CudaService.Log("Kernel arguments: " + string.Join(", ", kernelArgs.Select(x => x.ToString())), "", 1);
-
-			// Return kernel arguments
-			return kernelArgs;
-		}
-
-
-
-		
-
-
-	}
+    private readonly PrimaryContext _ctx;
+    private readonly string _kernelPath;
+
+    internal CudaCompiler(PrimaryContext ctx, string kernelPath, bool compileAll = true, bool logCompile = false)
+    {
+        this._ctx = ctx ?? throw new ArgumentNullException(nameof(ctx));
+        this._kernelPath = kernelPath ?? throw new ArgumentNullException(nameof(kernelPath));
+
+        Directory.CreateDirectory(Path.Combine(this._kernelPath, "CU"));
+        Directory.CreateDirectory(Path.Combine(this._kernelPath, "PTX"));
+        Directory.CreateDirectory(Path.Combine(this._kernelPath, "Logs"));
+
+        if (compileAll)
+        {
+            this.CompileAll(!logCompile, logCompile);
+        }
+    }
+
+    public CudaKernel? Kernel { get; private set; }
+    public string? KernelName { get; private set; }
+    public string? KernelFile { get; private set; }
+    public string? KernelCode { get; private set; }
+
+    public IReadOnlyList<string> SourceFiles => this.GetCuFiles();
+    public IReadOnlyList<string> CompiledFiles => this.GetPtxFiles();
+
+    public string KernelPath => this._kernelPath;
+
+    public void Dispose()
+    {
+        this.UnloadKernel();
+        GC.SuppressFinalize(this);
+    }
+
+    public void UnloadKernel()
+    {
+        if (this.Kernel == null)
+        {
+            return;
+        }
+
+        try
+        {
+            this._ctx.UnloadKernel(this.Kernel);
+        }
+        catch (Exception ex)
+        {
+            CudaLog.Warn("Failed to unload kernel", ex.Message);
+        }
+
+        this.Kernel = null;
+    }
+
+    public List<string> GetCuFiles(string? path = null)
+    {
+        path ??= Path.Combine(this._kernelPath, "CU");
+        return Directory.Exists(path) ? Directory.GetFiles(path, "*.cu").Select(Path.GetFullPath).ToList() : [];
+    }
+
+    public List<string> GetPtxFiles(string? path = null)
+    {
+        path ??= Path.Combine(this._kernelPath, "PTX");
+        return Directory.Exists(path) ? Directory.GetFiles(path, "*.ptx").Select(Path.GetFullPath).ToList() : [];
+    }
+
+    public void CompileAll(bool silent = false, bool logErrors = false)
+    {
+        foreach (var source in this.SourceFiles)
+        {
+            var result = this.CompileKernel(source, silent);
+            if (string.IsNullOrWhiteSpace(result) && logErrors)
+            {
+                CudaLog.Warn("Kernel compilation failed", Path.GetFileNameWithoutExtension(source));
+            }
+        }
+    }
+
+    public string? CompileKernel(string filePath, bool silent = false)
+    {
+        if (!File.Exists(filePath))
+        {
+            CudaLog.Warn("Kernel file not found", filePath);
+            return null;
+        }
+
+        if (!string.Equals(Path.GetExtension(filePath), ".cu", StringComparison.OrdinalIgnoreCase))
+        {
+            return this.CompileString(File.ReadAllText(filePath), silent);
+        }
+
+        string kernelName = Path.GetFileNameWithoutExtension(filePath);
+        string logPath = Path.Combine(this._kernelPath, "Logs", kernelName + ".log");
+        string code = File.ReadAllText(filePath);
+
+        var stopwatch = Stopwatch.StartNew();
+        if (!silent)
+        {
+            CudaLog.Info($"Compiling kernel '{kernelName}'");
+        }
+
+        using var rtc = new CudaRuntimeCompiler(code, kernelName);
+        try
+        {
+            rtc.Compile([]);
+            WriteCompilationLog(rtc, logPath, silent);
+
+            stopwatch.Stop();
+            if (!silent)
+            {
+                CudaLog.Info($"Compiled in {stopwatch.ElapsedMilliseconds} ms", Path.GetFileName(logPath));
+            }
+
+            var ptx = rtc.GetPTX();
+            string ptxPath = Path.Combine(this._kernelPath, "PTX", kernelName + ".ptx");
+            File.WriteAllBytes(ptxPath, ptx);
+
+            if (!silent)
+            {
+                CudaLog.Info("PTX exported", Path.GetFileName(ptxPath));
+            }
+
+            return ptxPath;
+        }
+        catch (Exception ex)
+        {
+            File.WriteAllText(logPath, rtc.GetLogAsString());
+            CudaLog.Error("CUDA compilation failed", ex.Message);
+            return null;
+        }
+    }
+
+    public string? CompileString(string kernelSource, bool silent = false)
+    {
+        string? name = this.PrecompileKernelString(kernelSource, silent);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        string cuPath = Path.Combine(this._kernelPath, "CU", name + ".cu");
+        File.WriteAllText(cuPath, kernelSource);
+        return this.CompileKernel(cuPath, silent);
+    }
+
+    public string? PrecompileKernelString(string kernelSource, bool silent = false)
+    {
+        if (!kernelSource.Contains("extern \"C\"", StringComparison.Ordinal))
+        {
+            if (!silent)
+            {
+                CudaLog.Warn("Kernel string missing extern \"C\"");
+            }
+            return null;
+        }
+
+        if (!kernelSource.Contains("__global__", StringComparison.Ordinal))
+        {
+            if (!silent)
+            {
+                CudaLog.Warn("Kernel string missing __global__");
+            }
+            return null;
+        }
+
+        if (!kernelSource.Contains("void ", StringComparison.Ordinal))
+        {
+            if (!silent)
+            {
+                CudaLog.Warn("Kernel string missing void signature");
+            }
+            return null;
+        }
+
+        int start = kernelSource.IndexOf("void ", StringComparison.Ordinal) + 5;
+        int end = kernelSource.IndexOf('(', start);
+        if (end < 0)
+        {
+            return null;
+        }
+
+        string name = kernelSource.Substring(start, end - start).Trim();
+        if (!silent)
+        {
+            CudaLog.Info("Validated kernel source", name);
+        }
+
+        return name;
+    }
+
+    public CudaKernel? LoadKernel(string kernelName, bool silent = false)
+    {
+        string ptxPath = Path.Combine(this._kernelPath, "PTX", kernelName + ".ptx");
+        string cuPath = Path.Combine(this._kernelPath, "CU", kernelName + ".cu");
+
+        if (!File.Exists(ptxPath))
+        {
+            if (!silent)
+            {
+                CudaLog.Warn("PTX file missing", kernelName);
+            }
+            return null;
+        }
+
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+            this.UnloadKernel();
+
+            byte[] ptxCode = File.ReadAllBytes(ptxPath);
+            this.Kernel = this._ctx.LoadKernelPTX(ptxCode, kernelName);
+            this.KernelName = kernelName;
+            this.KernelFile = ptxPath;
+            this.KernelCode = File.Exists(cuPath) ? File.ReadAllText(cuPath) : null;
+
+            stopwatch.Stop();
+            if (!silent)
+            {
+                CudaLog.Info($"Loaded kernel '{kernelName}'", $"{stopwatch.ElapsedMilliseconds} ms");
+            }
+
+            return this.Kernel;
+        }
+        catch (Exception ex)
+        {
+            if (!silent)
+            {
+                CudaLog.Error("Failed to load kernel", ex.Message);
+            }
+            this.Kernel = null;
+            return null;
+        }
+    }
+
+    public CudaKernel? CompileLoadKernelFromString(string kernelCodeOrFile)
+    {
+        if (File.Exists(kernelCodeOrFile))
+        {
+            var ptx = this.CompileKernel(kernelCodeOrFile, silent: true);
+            if (!string.IsNullOrEmpty(ptx))
+            {
+                var name = Path.GetFileNameWithoutExtension(kernelCodeOrFile);
+                return this.LoadKernel(name!, silent: true);
+            }
+            return null;
+        }
+
+        var nameFromSource = this.PrecompileKernelString(kernelCodeOrFile, silent: true);
+        if (string.IsNullOrWhiteSpace(nameFromSource))
+        {
+            return null;
+        }
+
+        var result = this.CompileString(kernelCodeOrFile, silent: true);
+        return string.IsNullOrEmpty(result) ? null : this.LoadKernel(nameFromSource!, silent: true);
+    }
+
+    public Dictionary<string, Type> GetArguments(string? kernelCodeOrFileName = null, bool log = false)
+    {
+        string code;
+        if (!string.IsNullOrWhiteSpace(kernelCodeOrFileName) && File.Exists(kernelCodeOrFileName) && Path.GetExtension(kernelCodeOrFileName).Equals(".cu", StringComparison.OrdinalIgnoreCase))
+        {
+            code = File.ReadAllText(kernelCodeOrFileName);
+        }
+        else if (!string.IsNullOrWhiteSpace(kernelCodeOrFileName))
+        {
+            var cu = this.SourceFiles.FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals(kernelCodeOrFileName, StringComparison.OrdinalIgnoreCase));
+            code = cu != null ? File.ReadAllText(cu) : kernelCodeOrFileName;
+        }
+        else if (!string.IsNullOrEmpty(this.KernelCode))
+        {
+            code = this.KernelCode;
+        }
+        else
+        {
+            return [];
+        }
+
+        int kernelStart = code.IndexOf("__global__ void", StringComparison.Ordinal);
+        if (kernelStart < 0)
+        {
+            if (log)
+            {
+                CudaLog.Warn("__global__ void not found for argument extraction");
+            }
+            return [];
+        }
+
+        string signature = code[kernelStart..];
+        signature = Regex.Replace(signature, @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+        signature = Regex.Replace(signature, @"//.*", string.Empty);
+
+        int open = signature.IndexOf('(');
+        int close = signature.IndexOf(')', open + 1);
+        if (open < 0 || close < 0)
+        {
+            return [];
+        }
+
+        string argSection = signature.Substring(open + 1, close - open - 1);
+        argSection = Regex.Replace(argSection, "\\s+", " ").Trim();
+        string[] rawArgs = argSection.Split([','], StringSplitOptions.RemoveEmptyEntries);
+
+        Dictionary<string, Type> args = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in rawArgs)
+        {
+            var tokens = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length < 2)
+            {
+                continue;
+            }
+
+            string name = tokens[^1].Trim();
+            string typeName = string.Join(' ', tokens.Take(tokens.Length - 1));
+            args[name] = this.GetArgumentType(typeName);
+        }
+
+        if (log)
+        {
+            CudaLog.Info("Extracted kernel arguments", string.Join(", ", args.Keys));
+        }
+
+        return args;
+    }
+
+    public Type GetArgumentType(string typeName)
+    {
+        string cleaned = Regex.Replace(typeName, @"\b(const|__restrict__|restrict|volatile)\b", string.Empty).Trim();
+        bool isPointer = cleaned.EndsWith("*");
+        if (isPointer)
+        {
+            cleaned = cleaned.TrimEnd('*').Trim();
+        }
+
+        Type baseType = cleaned switch
+        {
+            "int" => typeof(int),
+            "long" => typeof(long),
+            "float" => typeof(float),
+            "double" => typeof(double),
+            "char" => typeof(char),
+            "bool" => typeof(bool),
+            "byte" => typeof(byte),
+            "float2" => typeof(float2),
+            _ => typeof(void)
+        };
+
+        if (isPointer)
+        {
+            return typeof(CUdeviceptr);
+        }
+
+        return baseType;
+    }
+
+    private static void WriteCompilationLog(CudaRuntimeCompiler rtc, string logPath, bool silent)
+    {
+        string log = rtc.GetLogAsString();
+        if (string.IsNullOrWhiteSpace(log))
+        {
+            if (!silent)
+            {
+                CudaLog.Info("NVRTC compilation completed without warnings");
+            }
+            return;
+        }
+
+        File.WriteAllText(logPath, log);
+        if (!silent)
+        {
+            CudaLog.Warn("NVRTC emitted warnings", Path.GetFileName(logPath));
+        }
+    }
 }

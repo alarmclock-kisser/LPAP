@@ -8,13 +8,13 @@ namespace LPAP.Forms
 {
 	public partial class WindowMain
 	{
-		private readonly CudaService Cuda = new(-1, "");
+		private readonly CudaService Cuda = new("");
 
 		internal static string? CudaDevice { get; private set; } = null;
 
 
 		internal string? SelectedKernelName => this.comboBox_cudaKernels.SelectedItem as string;
-		internal Dictionary<string, Type>? KernelArgumentDefinitions => this.Cuda.Initialized ? this.Cuda.GetKernelArgumentDefinitions(this.SelectedKernelName) : null;
+		internal Dictionary<string, Type>? KernelArgumentDefinitions => this.Cuda.Initialized ? this.Cuda.GetKernelArguments(this.SelectedKernelName) : null;
 		private Dictionary<string, NumericUpDown>? KernelArgumentControls = null;
 		internal Dictionary<string, object>? KernelArgumentValues
 		{
@@ -35,13 +35,10 @@ namespace LPAP.Forms
 			this.listBox_cudaLog.SuspendLayout();
 			this.listBox_cudaLog.Items.Clear();
 
-			this.listBox_cudaLog.DataSource = CudaService.LogEntries;
-			CudaService.LogEntryAdded += (s, e) =>
-			{
-				this.listBox_cudaLog.TopIndex = this.listBox_cudaLog.Items.Count - 1;
-			};
+            CudaLog.LogAdded += this.OnLogAdded;
+			CudaLog.Info("WindowMain initialized", null, "UI");
 
-			this.listBox_cudaLog.DoubleClick += (s, e) =>
+            this.listBox_cudaLog.DoubleClick += (s, e) =>
 			{
 				if (this.listBox_cudaLog.SelectedItem is string)
 				{
@@ -52,12 +49,31 @@ namespace LPAP.Forms
 			this.listBox_cudaLog.HorizontalScrollbar = true;
 		}
 
-		private void ComboBox_FillCudaDevices()
+        private void OnLogAdded(string logEntry)
+        {
+            if (this.listBox_cudaLog.InvokeRequired)
+            {
+                this.listBox_cudaLog.Invoke(new Action(() => this.listBox_cudaLog.Items.Add($"[Thread] {logEntry}")));
+            }
+            else
+            {
+                this.listBox_cudaLog.Items.Add($"[Main] {logEntry}");
+            }
+        }
+
+        private void ComboBox_FillCudaDevices()
 		{
 			this.comboBox_cudaDevices.SuspendLayout();
 			this.comboBox_cudaDevices.Items.Clear();
 
-			this.comboBox_cudaDevices.DataSource = this.Cuda.DeviceEntries;
+			var deviceNames = this.Cuda.GetAvailableDevices().Values;
+			string[] deviceNamesWithIndex = deviceNames.Select((name, index) => $"[{index}]: {name}").ToArray();
+
+            this.comboBox_cudaDevices.Items.AddRange(deviceNamesWithIndex);
+			if (this.comboBox_cudaDevices.Items.Count > 0)
+			{
+				this.comboBox_cudaDevices.SelectedIndex = 0;
+            }
 
 			this.comboBox_cudaDevices.ResumeLayout();
 		}
@@ -66,45 +82,73 @@ namespace LPAP.Forms
 		{
 			this.comboBox_cudaKernels.SuspendLayout();
 			this.comboBox_cudaKernels.Items.Clear();
-			this.comboBox_cudaKernels.Items.AddRange(this.Cuda.GetAvailableKernels(filter).ToArray());
+			this.comboBox_cudaKernels.Items.AddRange(this.Cuda.GetKernels(filter).ToArray());
 			this.comboBox_cudaKernels.ResumeLayout();
 		}
 
-		private void UpdateCudaStatistics()
-		{
-			if (this.Cuda.Initialized)
-			{
-				double load = this.Cuda.GpuLoadPercent * 100;
-				double total = this.Cuda.TotalMemoryMb;
-				double free = this.Cuda.AvailableMemoryMb;
-				double used = total - free;
+        private async Task UpdateCudaStatistics()
+        {
+            // Snapshot / compute: darf off-thread passieren
+            bool initialized = this.Cuda.Initialized;
 
-                this.label_gpuLoad.Text = "Load: " + load.ToString("F2") + " %";
-				this.label_gpuLoad.ForeColor = load switch
-                {
-					>= 95.0 => System.Drawing.Color.Red,
-                    >= 80.0 => System.Drawing.Color.DarkRed,
-					>= 50.0 => System.Drawing.Color.DarkOrange,
-					>= 25.0 => System.Drawing.Color.DarkGoldenrod,
-                    >= 10.0 => System.Drawing.Color.Green,
-					_ => System.Drawing.Color.DarkGreen,
-                };
+            double? load = null;
+            double total = 0, free = 0, used = 0;
 
-                this.label_vram.Text = "VRAM: " + used.ToString("F0") + " MB / " + total.ToString("F0") + " MB";
-				this.progressBar_vram.Maximum = (int) total;
-				this.progressBar_vram.Value = (int) used;
+            if (initialized)
+            {
+                load = await this.Cuda.GetGpuLoadInPercentAsync().ConfigureAwait(false);
 
-			}
-			else
-			{
-				this.progressBar_vram.Value = 0;
-				this.label_vram.Text = $"VRAM: N/A";
-				this.label_gpuLoad.Text = $"GPU offline";
-				this.label_gpuLoad.ForeColor = SystemColors.ControlText;
+                total = this.Cuda.GetMemoryInBytes(VramStats.Total) / (1024.0 * 1024.0);
+                free = this.Cuda.GetMemoryInBytes(VramStats.Free) / (1024.0 * 1024.0);
+                used = total - free;
             }
-		}
 
-		private async Task BuildCudaKernelArgsAsync(float inputWidthPart = 0.64f)
+            // UI update: MUSS auf UI thread
+            if (this.IsDisposed || !this.IsHandleCreated)
+            {
+                return;
+            }
+
+            this.BeginInvoke(new Action(() =>
+            {
+                if (this.IsDisposed)
+                {
+                    return;
+                }
+
+                if (initialized)
+                {
+                    this.label_gpuLoad.Text = "Load: " + (load.HasValue ? load.Value.ToString("F1") + " %" : "N/A");
+                    this.label_gpuLoad.ForeColor = load switch
+                    {
+                        >= 95.0 => System.Drawing.Color.Red,
+                        >= 80.0 => System.Drawing.Color.DarkRed,
+                        >= 50.0 => System.Drawing.Color.DarkOrange,
+                        >= 25.0 => System.Drawing.Color.DarkGoldenrod,
+                        >= 10.0 => System.Drawing.Color.Green,
+                        _ => System.Drawing.Color.DarkGreen,
+                    };
+
+                    this.label_vram.Text = "VRAM: " + used.ToString("F0") + " MB / " + total.ToString("F0") + " MB";
+
+                    int max = (int) Math.Max(1, Math.Min(int.MaxValue, total));
+                    int val = (int) Math.Clamp(used, 0, max);
+
+                    this.progressBar_vram.Maximum = max;
+                    this.progressBar_vram.Value = val;
+                }
+                else
+                {
+                    this.progressBar_vram.Value = 0;
+                    this.label_vram.Text = "VRAM: N/A";
+                    this.label_gpuLoad.Text = "GPU offline";
+                    this.label_gpuLoad.ForeColor = SystemColors.ControlText;
+                }
+            }));
+        }
+
+
+        private async Task BuildCudaKernelArgsAsync(float inputWidthPart = 0.64f)
 		{
 			var argDefs = this.KernelArgumentDefinitions;
 
@@ -208,9 +252,17 @@ namespace LPAP.Forms
 					return;
 				}
 
-				CudaDevice = this.Cuda.SelectedDevice;
-				this.button_cudaInitialize.Text = "Dispose";
-				this.comboBox_cudaDevices.Enabled = false;
+				if (this.Cuda.DeviceIndex >= 0 && this.Cuda.DeviceIndex < this.Cuda.GetAvailableDevices().Count)
+				{
+                    CudaDevice = this.Cuda.AvailableDevices.Values.ElementAt(this.Cuda.DeviceIndex);
+                    this.button_cudaInitialize.Text = "Dispose";
+                    this.comboBox_cudaDevices.Enabled = false;
+                }
+				else
+				{
+					CudaLog.Error("CUDA Device index out of range after initialization.");
+					MessageBox.Show("CUDA Device index out of range after initialization.", "CUDA Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
 
 				this.ComboBox_FillCudaKernels();
 			}
@@ -218,15 +270,28 @@ namespace LPAP.Forms
 
         private void button_cudaInfo_Click(object sender, EventArgs e)
         {
-			if (!this.Cuda.Initialized)
-			{
-				MessageBox.Show("CUDA is not initialized.", "CUDA Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            string info = string.Empty;
+            bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+            if (ctrlFlag)
+            {
+                string[] stats = NvencVideoRenderer.ReadAllLines_LocalStats(false);
+                info = string.Join(Environment.NewLine, stats);
+                var result = MessageBox.Show(info + Environment.NewLine + Environment.NewLine + " --- Copy to Clipboard? ---", "Hardware Local Stats", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                if (result == DialogResult.Yes)
+                {
+                    Clipboard.SetText(info);
+                }
             }
             else
-			{
-				bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
-				string info = string.Join(Environment.NewLine, this.Cuda.GetDeviceInfo(!ctrlFlag));
-				MessageBox.Show(info, "CUDA Info [" + this.Cuda.Index + "]", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            {
+                if (!this.Cuda.Initialized)
+                {
+                    MessageBox.Show("CUDA is not initialized.", "CUDA Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                info = string.Join(Environment.NewLine, this.Cuda.GetDeviceInfo());
+                MessageBox.Show(info, "CUDA Info [" + this.Cuda.DeviceIndex + "]", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 

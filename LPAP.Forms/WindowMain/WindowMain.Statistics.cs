@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LPAP.Cuda;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -97,58 +98,72 @@ namespace LPAP.Forms
 			return timer;
 		}
 
-		private void StatisticsTimer_Tick(object? sender, EventArgs e)
-		{
-			// Ensure non-blocking: if a previous sampling pass is still running, skip this tick
-			if (Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
-			{
-				return;
-			}
+        private void StatisticsTimer_Tick(object? sender, EventArgs e)
+        {
+            if (Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
+            {
+                return;
+            }
 
-			_ = Task.Run(async () =>
-			{
-				try
-				{
-					// Memory (fast, sync)
-					long totalBytes = StatisticsExtensions.GetTotalMemoryBytes();
-					long usedBytes = StatisticsExtensions.GetUsedMemoryBytes();
-					this.MaxMemoryKb = totalBytes / 1024.0;
-					this.UsedMemoryKb = usedBytes / 1024.0;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    long totalBytes = StatisticsExtensions.GetTotalMemoryBytes();
+                    long usedBytes = StatisticsExtensions.GetUsedMemoryBytes();
+                    this.MaxMemoryKb = totalBytes / 1024.0;
+                    this.UsedMemoryKb = usedBytes / 1024.0;
 
-					// Update memory UI (marshal)
-					this.UpdateMemoryUiSafe();
+                    this.UpdateMemoryUiSafe();
 
-					// CPU usages (cached, async, no blocking on UI thread)
-					var usages = await StatisticsExtensions.GetThreadUsagesAsync().ConfigureAwait(false);
-					this.CoreUsages = usages;
+                    var usages = await StatisticsExtensions.GetThreadUsagesAsync().ConfigureAwait(false);
+                    this.CoreUsages = usages;
 
-					// Render cores bitmap off the UI thread
-					if (this.pictureBox_cores.Width > 0 && this.pictureBox_cores.Height > 0)
-					{
-						var bmp = await RenderCoresBitmapAsync(usages, this.pictureBox_cores.Width, this.pictureBox_cores.Height, this.pictureBox_cores.BackColor, CancellationToken.None).ConfigureAwait(false);
-						// assign image on UI thread
-						this.BeginInvoke(new Action(() =>
-						{
-							var old = this.pictureBox_cores.Image;
-							this.pictureBox_cores.Image = bmp;
-							old?.Dispose();
-						}));
-					}
-				}
-				catch
-				{
-					// ignore to keep UI responsive
-				}
-				finally
-				{
-					Interlocked.Exchange(ref this._statsRunning, 0);
-				}
-			});
+                    if (this.pictureBox_cores.Width > 0 && this.pictureBox_cores.Height > 0)
+                    {
+                        var bmp = await RenderCoresBitmapAsync(
+                            usages,
+                            this.pictureBox_cores.Width,
+                            this.pictureBox_cores.Height,
+                            this.pictureBox_cores.BackColor,
+                            CancellationToken.None).ConfigureAwait(false);
 
-			this.UpdateCudaStatistics();
-		}
+                        if (this.IsDisposed || !this.IsHandleCreated)
+                        {
+                            return;
+                        }
 
-		private void UpdateMemoryUiSafe()
+                        this.BeginInvoke(new Action(() =>
+                        {
+                            var old = this.pictureBox_cores.Image;
+                            this.pictureBox_cores.Image = bmp;
+                            old?.Dispose();
+                        }));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // NICHT komplett schlucken: zumindest loggen
+                    CudaLog.Error(ex, "StatisticsTimer_Tick worker failed", "Stats");
+                }
+                finally
+                {
+                    try
+                    {
+                        await this.UpdateCudaStatistics().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        CudaLog.Error(ex, "UpdateCudaStatistics failed", "Stats");
+                    }
+
+                    Interlocked.Exchange(ref this._statsRunning, 0);
+                }
+            });
+        }
+
+
+        private void UpdateMemoryUiSafe()
 		{
 			try
 			{

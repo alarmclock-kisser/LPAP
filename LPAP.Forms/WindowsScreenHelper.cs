@@ -70,7 +70,52 @@ namespace LPAP.Forms
 			}
 		}
 
-		internal static Point GetWindowScreenPosition(Form window, IEnumerable<AnchorStyles>? anchors = null)
+		internal static Size? GetScreenSize(Form? window = null, int? screenIndex = null)
+		{
+			try
+			{
+				Screen? targetScreen = null;
+				// Priority 1: screen containing the given form
+				if (window != null)
+				{
+					try
+					{
+						targetScreen = Screen.FromHandle(window.Handle);
+					}
+					catch
+					{
+						// fallback to control-based lookup if handle fails
+						try { targetScreen = Screen.FromControl(window); } catch { }
+					}
+				}
+				// Priority 2: screen by index
+				if (targetScreen == null && screenIndex.HasValue)
+				{
+					try
+					{
+						var screens = Screen.AllScreens;
+						if (screenIndex.Value >= 0 && screenIndex.Value < screens.Length)
+						{
+							targetScreen = screens[screenIndex.Value];
+						}
+					}
+					catch { }
+				}
+				// Priority 3: primary screen
+				targetScreen ??= Screen.PrimaryScreen;
+				if (targetScreen == null)
+				{
+					return null;
+				}
+				return targetScreen.Bounds.Size;
+			}
+			catch
+			{
+				return null;
+			}
+        }
+
+        internal static Point GetWindowScreenPosition(Form window, IEnumerable<AnchorStyles>? anchors = null)
 		{
 			anchors ??= []; // Empty means centered
 

@@ -405,6 +405,10 @@ namespace LPAP.Audio.Processing
                             int now = Interlocked.Increment(ref produced);
                             progress?.Report(now / (double) frameCount);
                         }
+						catch (Exception ex)
+						{
+                            Console.WriteLine(ex);
+						}
                         finally
                         {
                             if (buffer != null)

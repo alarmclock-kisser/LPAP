@@ -54,7 +54,7 @@ namespace LPAP.Forms
             this._statisticsTimer = this.InitializeStatisticsTimer();
             this.StatisticsUpdateDelayMs = (int) this.numericUpDown_statisticsUpdateDelay.Value;
 
-
+            this.Setup_UiToolTips();
         }
 
 
@@ -65,6 +65,15 @@ namespace LPAP.Forms
             {
                 acv.RefreshListBox();
             }
+        }
+
+
+        private void Setup_UiToolTips()
+        {
+            var toolTip = new ToolTip();
+
+            // Button info
+            toolTip.SetToolTip(this.button_cudaInfo, $" ~ Hardware Info ~ \n\n - Click for CUDA info\n\n - Ctrl-Click for system info");
         }
 
 

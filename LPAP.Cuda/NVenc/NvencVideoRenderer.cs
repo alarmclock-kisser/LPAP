@@ -15,21 +15,23 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace LPAP.Cuda
 {
-    public static class NvencVideoRenderer
+    public static partial class NvencVideoRenderer
     {
         public sealed record NvencOptions(
-            string VideoCodec,            // "h264_nvenc" oder "hevc_nvenc"
-            string Preset,                // z.B. "p5" (neuere ffmpeg/nvenc)
-            int? VideoBitrateKbps,         // null => CQ (wenn gesetzt) oder ffmpeg default
+            string VideoCodec,            // z.B. "h264_nvenc", "hevc_nvenc", "libx264", "libx265", "libsvtav1"
+            string Preset,                // NVENC: p1..p7, x264/x265: ultrafast..veryslow, svt-av1: 0..13 (string passt)
+            int? VideoBitrateKbps,         // null => Qualitätsmodus (CQ/CRF) oder ffmpeg default
             int? MaxBitrateKbps,           // optional
             int? BufferSizeKbps,           // optional
-            int? ConstantQuality,          // CQ (0..51 h264, 0..63 hevc), null => bitrate mode
-            string? Profile,               // z.B. "high" für h264
+            int? ConstantQuality,          // NVENC CQ (h264 0..51, hevc 0..63)
+            int? Crf,                      // CPU CRF (x264/x265/av1 typ. 0..51, kleiner = besser)
+            string? Profile,               // z.B. "high" (x264) / "main" (x265) etc.
             bool FastStart                 // -movflags +faststart
-        )
+)
         {
             public static NvencOptions H264Default => new(
                 VideoCodec: "h264_nvenc",
@@ -38,6 +40,7 @@ namespace LPAP.Cuda
                 MaxBitrateKbps: null,
                 BufferSizeKbps: null,
                 ConstantQuality: 20,
+                Crf: null,
                 Profile: "high",
                 FastStart: true
             );
@@ -49,10 +52,12 @@ namespace LPAP.Cuda
                 MaxBitrateKbps: null,
                 BufferSizeKbps: null,
                 ConstantQuality: 22,
+                Crf: null,
                 Profile: null,
                 FastStart: true
             );
         }
+
 
         public static readonly string[] CommonResolutions =
         [
@@ -169,7 +174,7 @@ namespace LPAP.Cuda
             }
 
             // 3) Output-Pfad bestimmen
-            var resolvedOutputPath = ResolveOutputPath(outputFilePath);
+            var resolvedOutputPath = ResolveOutputPath(outputFilePath, options);
             Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
 
             // 4) Gesamtdauer für Progress
@@ -504,7 +509,7 @@ namespace LPAP.Cuda
             IProgress<double>? progress,
             CancellationToken token)
         {
-            string output = ResolveOutputPath(outputFilePath);
+            string output = ResolveOutputPath(outputFilePath, options);
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 
             int expectedLen = checked(width * height * 4);
@@ -846,7 +851,7 @@ namespace LPAP.Cuda
                 throw new ArgumentOutOfRangeException(nameof(frameRate), "frameRate muss > 0 sein (oder Audio muss gültig sein).");
             }
 
-            var resolvedOutputPath = ResolveOutputPath(outputFilePath);
+            var resolvedOutputPath = ResolveOutputPath(outputFilePath, options);
             Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
 
             var totalVideoSeconds = frames.Length / (double) frameRate;
@@ -1045,7 +1050,7 @@ namespace LPAP.Cuda
                 throw new ArgumentOutOfRangeException(nameof(frameRate), "frameRate muss > 0 sein (oder Audio muss gültig sein).");
             }
 
-            var resolvedOutputPath = ResolveOutputPath(outputFilePath);
+            var resolvedOutputPath = ResolveOutputPath(outputFilePath, options);
             Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
 
             var totalVideoSeconds = frameFiles.Length / (double) frameRate;
@@ -1304,6 +1309,18 @@ namespace LPAP.Cuda
             string outputPath,
             NvencOptions options)
         {
+            static bool IsNvenc(string codec) => codec.Contains("_nvenc", StringComparison.OrdinalIgnoreCase);
+
+            static bool SupportsPreset(string codec)
+                => IsNvenc(codec)
+                   || codec.Equals("libx264", StringComparison.OrdinalIgnoreCase)
+                   || codec.Equals("libx265", StringComparison.OrdinalIgnoreCase)
+                   || codec.Equals("libsvtav1", StringComparison.OrdinalIgnoreCase);
+
+            static bool NeedsBv0ForCrf(string codec)
+                => codec.Contains("av1", StringComparison.OrdinalIgnoreCase)
+                   || codec.StartsWith("libvpx", StringComparison.OrdinalIgnoreCase);
+
             var sb = new StringBuilder();
 
             sb.Append("-hide_banner -nostats ");
@@ -1320,26 +1337,54 @@ namespace LPAP.Cuda
 
             sb.Append($"-c:v {options.VideoCodec} ");
 
-            if (!string.IsNullOrWhiteSpace(options.Preset))
+            if (!string.IsNullOrWhiteSpace(options.Preset) && SupportsPreset(options.VideoCodec))
             {
                 sb.Append($"-preset {options.Preset} ");
             }
 
-            if (options.ConstantQuality.HasValue)
+            // Qualitäts-/Bitrate-Modus
+            if (IsNvenc(options.VideoCodec))
             {
-                sb.Append(CultureInfo.InvariantCulture, $"-cq:v {options.ConstantQuality.Value} ");
-            }
-            else if (options.VideoBitrateKbps.HasValue)
-            {
-                sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
-                if (options.MaxBitrateKbps.HasValue)
+                if (options.ConstantQuality.HasValue)
                 {
-                    sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+                    sb.Append(CultureInfo.InvariantCulture, $"-cq:v {options.ConstantQuality.Value} ");
                 }
-
-                if (options.BufferSizeKbps.HasValue)
+                else if (options.VideoBitrateKbps.HasValue)
                 {
-                    sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                    if (options.MaxBitrateKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+                    }
+                    if (options.BufferSizeKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+                    }
+                }
+            }
+            else
+            {
+                if (options.Crf.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-crf {options.Crf.Value} ");
+
+                    // Viele CRF-Encoder erwarten b:v 0 (v.a. av1/vp9), sonst meckert ffmpeg oder macht weird ratecontrol.
+                    if (!options.VideoBitrateKbps.HasValue && NeedsBv0ForCrf(options.VideoCodec))
+                    {
+                        sb.Append("-b:v 0 ");
+                    }
+                }
+                else if (options.VideoBitrateKbps.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                    if (options.MaxBitrateKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+                    }
+                    if (options.BufferSizeKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+                    }
                 }
             }
 
@@ -1366,6 +1411,7 @@ namespace LPAP.Cuda
             return sb.ToString();
         }
 
+
         private static string BuildFfmpegArgsWithRawAudioPipe(
             int width,
             int height,
@@ -1376,6 +1422,18 @@ namespace LPAP.Cuda
             string outputPath,
             NvencOptions options)
         {
+            static bool IsNvenc(string codec) => codec.Contains("_nvenc", StringComparison.OrdinalIgnoreCase);
+
+            static bool SupportsPreset(string codec)
+                => IsNvenc(codec)
+                   || codec.Equals("libx264", StringComparison.OrdinalIgnoreCase)
+                   || codec.Equals("libx265", StringComparison.OrdinalIgnoreCase)
+                   || codec.Equals("libsvtav1", StringComparison.OrdinalIgnoreCase);
+
+            static bool NeedsBv0ForCrf(string codec)
+                => codec.Contains("av1", StringComparison.OrdinalIgnoreCase)
+                   || codec.StartsWith("libvpx", StringComparison.OrdinalIgnoreCase);
+
             var sb = new StringBuilder();
 
             sb.Append("-hide_banner -nostats ");
@@ -1390,26 +1448,52 @@ namespace LPAP.Cuda
 
             sb.Append($"-c:v {options.VideoCodec} ");
 
-            if (!string.IsNullOrWhiteSpace(options.Preset))
+            if (!string.IsNullOrWhiteSpace(options.Preset) && SupportsPreset(options.VideoCodec))
             {
                 sb.Append($"-preset {options.Preset} ");
             }
 
-            if (options.ConstantQuality.HasValue)
+            // Qualitäts-/Bitrate-Modus
+            if (IsNvenc(options.VideoCodec))
             {
-                sb.Append(CultureInfo.InvariantCulture, $"-cq:v {options.ConstantQuality.Value} ");
-            }
-            else if (options.VideoBitrateKbps.HasValue)
-            {
-                sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
-                if (options.MaxBitrateKbps.HasValue)
+                if (options.ConstantQuality.HasValue)
                 {
-                    sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+                    sb.Append(CultureInfo.InvariantCulture, $"-cq:v {options.ConstantQuality.Value} ");
                 }
-
-                if (options.BufferSizeKbps.HasValue)
+                else if (options.VideoBitrateKbps.HasValue)
                 {
-                    sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                    if (options.MaxBitrateKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+                    }
+                    if (options.BufferSizeKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+                    }
+                }
+            }
+            else
+            {
+                if (options.Crf.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-crf {options.Crf.Value} ");
+                    if (!options.VideoBitrateKbps.HasValue && NeedsBv0ForCrf(options.VideoCodec))
+                    {
+                        sb.Append("-b:v 0 ");
+                    }
+                }
+                else if (options.VideoBitrateKbps.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                    if (options.MaxBitrateKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+                    }
+                    if (options.BufferSizeKbps.HasValue)
+                    {
+                        sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+                    }
                 }
             }
 
@@ -1431,6 +1515,7 @@ namespace LPAP.Cuda
 
             return sb.ToString();
         }
+
 
         private static void GetMaxDimensions(Image[] frames, out int maxW, out int maxH)
         {
@@ -1454,7 +1539,7 @@ namespace LPAP.Cuda
             }
         }
 
-        private static string ResolveOutputPath(string? outputFilePath)
+        private static string ResolveOutputPath(string? outputFilePath, NvencOptions options, bool addCodecToName = true)
         {
             string baseDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
@@ -1462,21 +1547,35 @@ namespace LPAP.Cuda
 
             Directory.CreateDirectory(baseDir);
 
-            string defaultFileName =
-                "NVenc_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".mp4";
+            string ext = GetPreferredContainerExtension(options);
+            string defaultFileName = "NVENC_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + (addCodecToName ? options.GetType().Name.Split('.').LastOrDefault() : "") + ext;
 
+            // 1) Null/leer → Default
             if (string.IsNullOrWhiteSpace(outputFilePath))
             {
                 return Path.Combine(baseDir, defaultFileName);
             }
 
+            outputFilePath = outputFilePath.Trim();
+
+            // 2) NUR Dateiname (kein Verzeichnisanteil)
+            if (!outputFilePath.Contains(Path.DirectorySeparatorChar) &&
+                !outputFilePath.Contains(Path.AltDirectorySeparatorChar))
+            {
+                string fileName = EnsurePreferredExtension(outputFilePath, ext);
+                return Path.Combine(baseDir, fileName);
+            }
+
+            // Ab hier: Pfad vorhanden
             outputFilePath = Path.GetFullPath(outputFilePath);
 
+            // 3) Existierendes Verzeichnis
             if (Directory.Exists(outputFilePath))
             {
                 return Path.Combine(outputFilePath, defaultFileName);
             }
 
+            // 4) Endet auf Slash → explizites Verzeichnis
             if (outputFilePath.EndsWith(Path.DirectorySeparatorChar) ||
                 outputFilePath.EndsWith(Path.AltDirectorySeparatorChar))
             {
@@ -1484,19 +1583,112 @@ namespace LPAP.Cuda
                 return Path.Combine(outputFilePath, defaultFileName);
             }
 
-            string dir = Path.GetDirectoryName(outputFilePath)!;
+            // 5) Pfad + Dateiname
+            string? dir = Path.GetDirectoryName(outputFilePath);
             if (!string.IsNullOrWhiteSpace(dir))
             {
                 Directory.CreateDirectory(dir);
             }
 
-            if (!outputFilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
+            return EnsurePreferredExtension(outputFilePath, ext);
+        }
+
+        // optional: alte Signatur behalten (falls irgendwo intern noch benutzt)
+        private static string ResolveOutputPath(string? outputFilePath)
+            => ResolveOutputPath(outputFilePath, NvencOptions.H264Default);
+
+        private static string GetPreferredContainerExtension(NvencOptions options)
+        {
+            var c = (options.VideoCodec ?? "").Trim().ToLowerInvariant();
+
+            // Editing/Intermediate Codecs -> MOV
+            if (c is "prores_ks" or "prores_aw" or "dnxhd" or "dnxhr" or "cfhd" or "qtrle")
             {
-                outputFilePath += ".mp4";
+                return ".mov";
             }
 
-            return outputFilePath;
+            // VP8/VP9 -> WebM (typisch)
+            if (c.StartsWith("libvpx"))
+            {
+                return ".webm";
+            }
+
+            // AV1 -> Matroska ist sehr robust (mp4 geht auch, aber mkv macht weniger Stress)
+            if (c.Contains("av1"))
+            {
+                return ".mkv";
+            }
+
+            // Default “delivery”
+            return ".mp4";
         }
+
+        private static string EnsurePreferredExtension(string pathOrFileName, string preferredExt)
+        {
+            // Wenn gar keine Extension: anhängen
+            string ext = Path.GetExtension(pathOrFileName);
+            if (string.IsNullOrWhiteSpace(ext))
+            {
+                return pathOrFileName + preferredExt;
+            }
+
+            // Wenn “Container-Extension” aber falsch: ersetzen
+            // (damit "out.mp4" bei ProRes automatisch "out.mov" wird)
+            if (ext.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".mov", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".webm", StringComparison.OrdinalIgnoreCase) ||
+                ext.Equals(".avi", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!ext.Equals(preferredExt, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.ChangeExtension(pathOrFileName, preferredExt);
+                }
+            }
+
+            // Sonst: user hat bewusst was anderes gewählt -> lassen
+            return pathOrFileName;
+        }
+
+
+        public static string SanitizeFileName(string? name, string replacement = "_")
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return string.Empty;
+            }
+
+            // Verbotene Zeichen für Dateinamen (Windows)
+            var invalidChars = Path.GetInvalidFileNameChars();
+
+            var sb = new StringBuilder(name.Length);
+            foreach (char c in name)
+            {
+                if (invalidChars.Contains(c))
+                {
+                    sb.Append(replacement);
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+
+            // Zusätzliche kosmetische Fixes
+            string result = sb.ToString().Trim();
+
+            // Mehrere Ersatzzeichen zusammenfassen
+            while (result.Contains(replacement + replacement))
+            {
+                result = result.Replace(replacement + replacement, replacement);
+            }
+
+            // Windows mag keine Namen, die mit Punkt/Leerzeichen enden
+            result = result.TrimEnd('.', ' ');
+
+            return result;
+        }
+
 
         private static void TryKill(Process p)
         {
@@ -1702,7 +1894,7 @@ namespace LPAP.Cuda
 
             if (imageFilePaths.Length == 0)
             {
-                return Array.Empty<Image>();
+                return [];
             }
 
             maxWorkers = maxWorkers <= 0
@@ -1733,7 +1925,7 @@ namespace LPAP.Cuda
             int total = paths.Length;
             if (total == 0)
             {
-                return Array.Empty<Image>();
+                return [];
             }
 
             progress?.Report(0);

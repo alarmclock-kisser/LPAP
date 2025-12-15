@@ -46,6 +46,10 @@
             this.label_info_volume = new Label();
             this.label_amplification = new Label();
             this.numericUpDown_amplification = new NumericUpDown();
+            this.label_time = new Label();
+            this.label_framesPerSec = new Label();
+            this.comboBox_preset = new ComboBox();
+            this.button_codecInfo = new Button();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_frameRate).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_startSeconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_endSeconds).BeginInit();
@@ -77,7 +81,7 @@
             this.comboBox_resolution.FormattingEnabled = true;
             this.comboBox_resolution.Location = new Point(12, 27);
             this.comboBox_resolution.Name = "comboBox_resolution";
-            this.comboBox_resolution.Size = new Size(200, 23);
+            this.comboBox_resolution.Size = new Size(222, 23);
             this.comboBox_resolution.TabIndex = 2;
             this.comboBox_resolution.Text = "Select Resolution...";
             this.comboBox_resolution.SelectedIndexChanged += this.comboBox_resolution_SelectedIndexChanged;
@@ -148,14 +152,16 @@
             this.label_sizeApprox.AutoSize = true;
             this.label_sizeApprox.Location = new Point(12, 268);
             this.label_sizeApprox.Name = "label_sizeApprox";
-            this.label_sizeApprox.Size = new Size(106, 15);
+            this.label_sizeApprox.Size = new Size(88, 15);
             this.label_sizeApprox.TabIndex = 9;
-            this.label_sizeApprox.Text = "ca. - frames (- MB)";
+            this.label_sizeApprox.Text = "- frames (- MB)";
             // 
             // checkBox_copyPath
             // 
             this.checkBox_copyPath.AutoSize = true;
-            this.checkBox_copyPath.Location = new Point(240, 261);
+            this.checkBox_copyPath.Checked = true;
+            this.checkBox_copyPath.CheckState = CheckState.Checked;
+            this.checkBox_copyPath.Location = new Point(12, 206);
             this.checkBox_copyPath.Name = "checkBox_copyPath";
             this.checkBox_copyPath.Size = new Size(81, 19);
             this.checkBox_copyPath.TabIndex = 10;
@@ -229,11 +235,53 @@
             this.numericUpDown_amplification.TabIndex = 16;
             this.numericUpDown_amplification.Value = new decimal(new int[] { 667, 0, 0, 65536 });
             // 
+            // label_time
+            // 
+            this.label_time.AutoSize = true;
+            this.label_time.Location = new Point(240, 268);
+            this.label_time.Name = "label_time";
+            this.label_time.Size = new Size(78, 15);
+            this.label_time.TabIndex = 18;
+            this.label_time.Text = "0.00s / ~0.00s";
+            // 
+            // label_framesPerSec
+            // 
+            this.label_framesPerSec.AutoSize = true;
+            this.label_framesPerSec.Location = new Point(240, 253);
+            this.label_framesPerSec.Name = "label_framesPerSec";
+            this.label_framesPerSec.Size = new Size(58, 15);
+            this.label_framesPerSec.TabIndex = 19;
+            this.label_framesPerSec.Text = "~ 0.00 fps";
+            // 
+            // comboBox_preset
+            // 
+            this.comboBox_preset.FormattingEnabled = true;
+            this.comboBox_preset.Location = new Point(12, 56);
+            this.comboBox_preset.Name = "comboBox_preset";
+            this.comboBox_preset.Size = new Size(193, 23);
+            this.comboBox_preset.TabIndex = 20;
+            this.comboBox_preset.Text = "Select Preset...";
+            // 
+            // button_codecInfo
+            // 
+            this.button_codecInfo.Font = new Font("Bahnschrift", 9F, FontStyle.Bold, GraphicsUnit.Point,  0);
+            this.button_codecInfo.Location = new Point(211, 56);
+            this.button_codecInfo.Name = "button_codecInfo";
+            this.button_codecInfo.Size = new Size(23, 23);
+            this.button_codecInfo.TabIndex = 21;
+            this.button_codecInfo.Text = "i";
+            this.button_codecInfo.UseVisualStyleBackColor = true;
+            this.button_codecInfo.Click += this.button_codecInfo_Click;
+            // 
             // VisualizerDialog
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(344, 321);
+            this.Controls.Add(this.button_codecInfo);
+            this.Controls.Add(this.comboBox_preset);
+            this.Controls.Add(this.label_framesPerSec);
+            this.Controls.Add(this.label_time);
             this.Controls.Add(this.label_amplification);
             this.Controls.Add(this.numericUpDown_amplification);
             this.Controls.Add(this.label_info_volume);
@@ -286,5 +334,9 @@
 		private Label label_info_volume;
         private Label label_amplification;
         private NumericUpDown numericUpDown_amplification;
+        private Label label_time;
+        private Label label_framesPerSec;
+        private ComboBox comboBox_preset;
+        private Button button_codecInfo;
     }
 }

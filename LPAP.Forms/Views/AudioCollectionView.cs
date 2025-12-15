@@ -737,11 +737,6 @@ namespace LPAP.Forms.Views
                 MessageBox.Show("No audio selected.", "Visualizer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            if (WindowMain.CudaDevice == null)
-            {
-                MessageBox.Show("CUDA is not initialized. Visualizer requires CUDA support.", "Visualizer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
 
             var dlg = new VisualizerDialog(audio);
             dlg.ShowDialog(this);

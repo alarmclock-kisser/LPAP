@@ -1,4 +1,5 @@
 using LPAP.Audio;
+using LPAP.Cuda;
 namespace LPAP.Forms
 {
 	internal static class Program
@@ -10,8 +11,21 @@ namespace LPAP.Forms
 		static void Main()
 		{
 			ApplicationConfiguration.Initialize();
-			AudioScheduling.ConfigureProcessForAudio();
-			Application.Run(new WindowMain());
-		}
+
+            Application.Idle += (_, __) =>
+            {
+                // run once
+                Application.Idle -= (_, __) => { };
+
+                Task.Run(() =>
+                {
+                    try { NvencVideoRenderer.WriteHardwareInfo_To_LocalStats(); }
+                    catch { }
+                });
+            };
+
+            AudioScheduling.ConfigureProcessForAudio();
+            Application.Run(new WindowMain());
+        }
 	}
 }
