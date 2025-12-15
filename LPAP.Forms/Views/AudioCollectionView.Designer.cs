@@ -20,7 +20,7 @@
             base.Dispose(disposing);
         }
 
-        #region Windows Form Designer generated code
+		#region Windows Form Designer generated code
 
         /// <summary>
         /// Required method for Designer support - do not modify
@@ -242,9 +242,9 @@
             this.ResumeLayout(false);
         }
 
-        #endregion
+		#endregion
 
-        private LPAP.Forms.Views.AudioListBox listBox_audios;
+		private LPAP.Forms.Views.AudioListBox listBox_audios;
         private ContextMenuStrip contextMenuStrip_listBox;
         private ToolStripMenuItem openAsTrackToolStripMenuItem;
         private ToolStripMenuItem renameToolStripMenuItem;
@@ -252,21 +252,5 @@
         private ToolStripMenuItem addNumberingToolStripMenuItem;
         private ToolStripTextBox toolStripTextBox_format;
         private ToolStripMenuItem deleteToolStripMenuItem;
-        private ToolStripMenuItem toolStripMenuItem1;
-        private ToolStripMenuItem wAVToolStripMenuItem;
-        private ToolStripMenuItem mP3ToolStripMenuItem;
-        private ToolStripMenuItem wav32ToolStripMenuItem;
-        private ToolStripMenuItem wav24ToolStripMenuItem;
-        private ToolStripMenuItem wav16ToolStripMenuItem;
-        private ToolStripMenuItem wav8ToolStripMenuItem;
-        private ToolStripMenuItem mp3320ToolStripMenuItem;
-        private ToolStripMenuItem mp3256ToolStripMenuItem;
-        private ToolStripMenuItem mp3224ToolStripMenuItem;
-        private ToolStripMenuItem mp3192ToolStripMenuItem;
-        private ToolStripMenuItem mp3160ToolStripMenuItem;
-        private ToolStripMenuItem mp3128ToolStripMenuItem;
-        private ToolStripMenuItem mp396ToolStripMenuItem;
-        private ToolStripMenuItem mp364ToolStripMenuItem;
-        private ToolStripMenuItem mp332ToolStripMenuItem;
     }
 }

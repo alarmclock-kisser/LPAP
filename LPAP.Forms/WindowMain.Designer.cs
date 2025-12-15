@@ -33,13 +33,28 @@
 			this.pictureBox_cores = new PictureBox();
 			this.progressBar_memory = new ProgressBar();
 			this.label_memory = new Label();
+			this.checkBox_enableMonitoring = new CheckBox();
+			this.numericUpDown_statisticsUpdateDelay = new NumericUpDown();
+			this.label_info_statisticsUpdateDelay = new Label();
+			this.checkBox_autoApply = new CheckBox();
+			this.button_looping = new Button();
+			this.button_cudaInitialize = new Button();
+			this.comboBox_cudaDevices = new ComboBox();
+			this.listBox_cudaLog = new ListBox();
+			this.label_vram = new Label();
+			this.progressBar_vram = new ProgressBar();
+			this.label_gpuLoad = new Label();
+			this.panel_cudaKernelArguments = new Panel();
+			this.comboBox_cudaKernels = new ComboBox();
+			this.button_cudaExecute = new Button();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).BeginInit();
 			this.SuspendLayout();
 			// 
 			// button_import
 			// 
 			this.button_import.BackColor = Color.FromArgb(  192,   255,   255);
-			this.button_import.Location = new Point(12, 12);
+			this.button_import.Location = new Point(517, 285);
 			this.button_import.Name = "button_import";
 			this.button_import.Size = new Size(75, 23);
 			this.button_import.TabIndex = 0;
@@ -50,7 +65,7 @@
 			// button_reflow
 			// 
 			this.button_reflow.BackColor = Color.FromArgb(  192,   192,   255);
-			this.button_reflow.Location = new Point(517, 406);
+			this.button_reflow.Location = new Point(517, 381);
 			this.button_reflow.Name = "button_reflow";
 			this.button_reflow.Size = new Size(75, 23);
 			this.button_reflow.TabIndex = 1;
@@ -83,11 +98,159 @@
 			this.label_memory.TabIndex = 4;
 			this.label_memory.Text = "RAM: 0.00 MB / - MB";
 			// 
+			// checkBox_enableMonitoring
+			// 
+			this.checkBox_enableMonitoring.AutoSize = true;
+			this.checkBox_enableMonitoring.Checked = true;
+			this.checkBox_enableMonitoring.CheckState = CheckState.Checked;
+			this.checkBox_enableMonitoring.Location = new Point(442, 212);
+			this.checkBox_enableMonitoring.Name = "checkBox_enableMonitoring";
+			this.checkBox_enableMonitoring.Size = new Size(68, 19);
+			this.checkBox_enableMonitoring.TabIndex = 5;
+			this.checkBox_enableMonitoring.Text = "Enabled";
+			this.checkBox_enableMonitoring.UseVisualStyleBackColor = true;
+			this.checkBox_enableMonitoring.CheckedChanged += this.checkBox_enableMonitoring_CheckedChanged;
+			// 
+			// numericUpDown_statisticsUpdateDelay
+			// 
+			this.numericUpDown_statisticsUpdateDelay.Increment = new decimal(new int[] { 125, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.Location = new Point(542, 190);
+			this.numericUpDown_statisticsUpdateDelay.Maximum = new decimal(new int[] { 2500, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.Minimum = new decimal(new int[] { 125, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.Name = "numericUpDown_statisticsUpdateDelay";
+			this.numericUpDown_statisticsUpdateDelay.Size = new Size(50, 23);
+			this.numericUpDown_statisticsUpdateDelay.TabIndex = 6;
+			this.numericUpDown_statisticsUpdateDelay.Value = new decimal(new int[] { 500, 0, 0, 0 });
+			this.numericUpDown_statisticsUpdateDelay.ValueChanged += this.numericUpDown_statisticsUpdateDelay_ValueChanged;
+			// 
+			// label_info_statisticsUpdateDelay
+			// 
+			this.label_info_statisticsUpdateDelay.AutoSize = true;
+			this.label_info_statisticsUpdateDelay.Location = new Point(542, 216);
+			this.label_info_statisticsUpdateDelay.Name = "label_info_statisticsUpdateDelay";
+			this.label_info_statisticsUpdateDelay.Size = new Size(55, 15);
+			this.label_info_statisticsUpdateDelay.TabIndex = 7;
+			this.label_info_statisticsUpdateDelay.Text = "Delay ms";
+			// 
+			// checkBox_autoApply
+			// 
+			this.checkBox_autoApply.AutoSize = true;
+			this.checkBox_autoApply.Location = new Point(486, 410);
+			this.checkBox_autoApply.Name = "checkBox_autoApply";
+			this.checkBox_autoApply.Size = new Size(106, 19);
+			this.checkBox_autoApply.TabIndex = 8;
+			this.checkBox_autoApply.Text = "Apply on Close";
+			this.checkBox_autoApply.UseVisualStyleBackColor = true;
+			this.checkBox_autoApply.CheckedChanged += this.checkBox_autoApply_CheckedChanged;
+			// 
+			// button_looping
+			// 
+			this.button_looping.Location = new Point(517, 314);
+			this.button_looping.Name = "button_looping";
+			this.button_looping.Size = new Size(75, 23);
+			this.button_looping.TabIndex = 9;
+			this.button_looping.Text = "Looping";
+			this.button_looping.UseVisualStyleBackColor = true;
+			this.button_looping.Click += this.button_looping_Click;
+			// 
+			// button_cudaInitialize
+			// 
+			this.button_cudaInitialize.Location = new Point(218, 12);
+			this.button_cudaInitialize.Name = "button_cudaInitialize";
+			this.button_cudaInitialize.Size = new Size(75, 23);
+			this.button_cudaInitialize.TabIndex = 10;
+			this.button_cudaInitialize.Text = "Initialize";
+			this.button_cudaInitialize.UseVisualStyleBackColor = true;
+			this.button_cudaInitialize.Click += this.button_cudaInitialize_Click;
+			// 
+			// comboBox_cudaDevices
+			// 
+			this.comboBox_cudaDevices.FormattingEnabled = true;
+			this.comboBox_cudaDevices.Location = new Point(12, 12);
+			this.comboBox_cudaDevices.Name = "comboBox_cudaDevices";
+			this.comboBox_cudaDevices.Size = new Size(200, 23);
+			this.comboBox_cudaDevices.TabIndex = 11;
+			this.comboBox_cudaDevices.Text = "Select a CUDA Device...";
+			this.comboBox_cudaDevices.SelectedIndexChanged += this.comboBox_cudaDevices_SelectedIndexChanged;
+			// 
+			// listBox_cudaLog
+			// 
+			this.listBox_cudaLog.FormattingEnabled = true;
+			this.listBox_cudaLog.Location = new Point(12, 41);
+			this.listBox_cudaLog.Name = "listBox_cudaLog";
+			this.listBox_cudaLog.Size = new Size(281, 139);
+			this.listBox_cudaLog.TabIndex = 12;
+			// 
+			// label_vram
+			// 
+			this.label_vram.AutoSize = true;
+			this.label_vram.Location = new Point(442, 151);
+			this.label_vram.Name = "label_vram";
+			this.label_vram.Size = new Size(125, 15);
+			this.label_vram.TabIndex = 13;
+			this.label_vram.Text = "VRAM: 0.00 MB / - MB";
+			// 
+			// progressBar_vram
+			// 
+			this.progressBar_vram.Location = new Point(442, 169);
+			this.progressBar_vram.Name = "progressBar_vram";
+			this.progressBar_vram.Size = new Size(150, 15);
+			this.progressBar_vram.TabIndex = 14;
+			// 
+			// label_gpuLoad
+			// 
+			this.label_gpuLoad.AutoSize = true;
+			this.label_gpuLoad.Location = new Point(442, 187);
+			this.label_gpuLoad.Name = "label_gpuLoad";
+			this.label_gpuLoad.Size = new Size(54, 15);
+			this.label_gpuLoad.TabIndex = 15;
+			this.label_gpuLoad.Text = "Load: -%";
+			// 
+			// panel_cudaKernelArguments
+			// 
+			this.panel_cudaKernelArguments.Location = new Point(12, 215);
+			this.panel_cudaKernelArguments.Name = "panel_cudaKernelArguments";
+			this.panel_cudaKernelArguments.Size = new Size(281, 160);
+			this.panel_cudaKernelArguments.TabIndex = 16;
+			// 
+			// comboBox_cudaKernels
+			// 
+			this.comboBox_cudaKernels.FormattingEnabled = true;
+			this.comboBox_cudaKernels.Location = new Point(12, 186);
+			this.comboBox_cudaKernels.Name = "comboBox_cudaKernels";
+			this.comboBox_cudaKernels.Size = new Size(281, 23);
+			this.comboBox_cudaKernels.TabIndex = 17;
+			this.comboBox_cudaKernels.SelectedIndexChanged += this.comboBox_cudaKernels_SelectedIndexChanged;
+			// 
+			// button_cudaExecute
+			// 
+			this.button_cudaExecute.Location = new Point(218, 406);
+			this.button_cudaExecute.Name = "button_cudaExecute";
+			this.button_cudaExecute.Size = new Size(75, 23);
+			this.button_cudaExecute.TabIndex = 18;
+			this.button_cudaExecute.Text = "Execute";
+			this.button_cudaExecute.UseVisualStyleBackColor = true;
+			this.button_cudaExecute.Click += this.button_cudaExecute_Click;
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(604, 441);
+			this.Controls.Add(this.button_cudaExecute);
+			this.Controls.Add(this.comboBox_cudaKernels);
+			this.Controls.Add(this.panel_cudaKernelArguments);
+			this.Controls.Add(this.label_gpuLoad);
+			this.Controls.Add(this.progressBar_vram);
+			this.Controls.Add(this.label_vram);
+			this.Controls.Add(this.listBox_cudaLog);
+			this.Controls.Add(this.comboBox_cudaDevices);
+			this.Controls.Add(this.button_cudaInitialize);
+			this.Controls.Add(this.button_looping);
+			this.Controls.Add(this.checkBox_autoApply);
+			this.Controls.Add(this.label_info_statisticsUpdateDelay);
+			this.Controls.Add(this.numericUpDown_statisticsUpdateDelay);
+			this.Controls.Add(this.checkBox_enableMonitoring);
 			this.Controls.Add(this.label_memory);
 			this.Controls.Add(this.progressBar_memory);
 			this.Controls.Add(this.pictureBox_cores);
@@ -99,6 +262,7 @@
 			this.Name = "WindowMain";
 			this.Text = "LPAP (Forms) Main-Control";
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -110,5 +274,19 @@
 		private PictureBox pictureBox_cores;
 		private ProgressBar progressBar_memory;
 		private Label label_memory;
+		private CheckBox checkBox_enableMonitoring;
+		private NumericUpDown numericUpDown_statisticsUpdateDelay;
+		private Label label_info_statisticsUpdateDelay;
+		private CheckBox checkBox_autoApply;
+		private Button button_looping;
+		private Button button_cudaInitialize;
+		private ComboBox comboBox_cudaDevices;
+		private ListBox listBox_cudaLog;
+		private Label label_vram;
+		private ProgressBar progressBar_vram;
+		private Label label_gpuLoad;
+		private Panel panel_cudaKernelArguments;
+		private ComboBox comboBox_cudaKernels;
+		private Button button_cudaExecute;
 	}
 }

@@ -23,7 +23,58 @@ namespace LPAP.Forms
 		private bool _statsInitialized;
 		private volatile int _statsRunning; // 0 = idle, 1 = running
 
-		// Initialize statistics sampling timer (250 ms) and return it so caller can assign mandatory attribute
+		 // ---- configurable statistics sampling ----
+		// default delay used before initialization
+		private int _statsUpdateDelayMs = 250;
+		private bool _statsEnabled = true;
+
+		// Expose toggles for timer enable and update delay
+		[Browsable(false)]
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public bool StatisticsEnabled
+		{
+			get => this._statsEnabled;
+			set
+			{
+				this._statsEnabled = value;
+				// lambda-like setter behavior: apply immediately if timer exists
+				if (this._statisticsTimer != null)
+				{
+					try
+					{
+						if (value)
+						{
+							this._statisticsTimer.Start();
+						}
+						else
+						{
+							this._statisticsTimer.Stop();
+						}
+					}
+					catch { }
+				}
+			}
+		}
+
+		[Browsable(false)]
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		public int StatisticsUpdateDelayMs
+		{
+			get => this._statsUpdateDelayMs;
+			set
+			{
+				// sanitize
+				int v = value <= 0 ? 1 : value;
+				this._statsUpdateDelayMs = v;
+				// lambda-like setter: update interval immediately if timer exists
+				if (this._statisticsTimer != null)
+				{
+					try { this._statisticsTimer.Interval = v; } catch { }
+				}
+			}
+		}
+
+		// Initialize statistics sampling timer (configurable delay) and return it so caller can assign mandatory attribute
 		internal Timer InitializeStatisticsTimer()
 		{
 			if (this._statsInitialized && this._statisticsTimer != null)
@@ -33,10 +84,15 @@ namespace LPAP.Forms
 
 			var timer = new Timer
 			{
-				Interval = 250
+				Interval = this._statsUpdateDelayMs
 			};
 			timer.Tick += this.StatisticsTimer_Tick;
-			timer.Start();
+			// respect enabled toggle
+			if (this._statsEnabled)
+			{
+				timer.Start();
+			}
+			this._statisticsTimer = timer;
 			this._statsInitialized = true;
 			return timer;
 		}
@@ -44,7 +100,7 @@ namespace LPAP.Forms
 		private void StatisticsTimer_Tick(object? sender, EventArgs e)
 		{
 			// Ensure non-blocking: if a previous sampling pass is still running, skip this tick
-			if (Interlocked.CompareExchange(ref _statsRunning, 1, 0) != 0)
+			if (Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
 			{
 				return;
 			}
@@ -78,16 +134,18 @@ namespace LPAP.Forms
 							old?.Dispose();
 						}));
 					}
-					}
+				}
 				catch
 				{
 					// ignore to keep UI responsive
 				}
 				finally
 				{
-					Interlocked.Exchange(ref _statsRunning, 0);
+					Interlocked.Exchange(ref this._statsRunning, 0);
 				}
 			});
+
+			this.UpdateCudaStatistics();
 		}
 
 		private void UpdateMemoryUiSafe()
@@ -102,7 +160,7 @@ namespace LPAP.Forms
 						int percent = 0;
 						if (this.MaxMemoryKb > 0)
 						{
-							percent = (int)Math.Clamp(Math.Round(this.UsedMemoryKb / this.MaxMemoryKb * 100.0), 0, 100);
+							percent = (int) Math.Clamp(Math.Round(this.UsedMemoryKb / this.MaxMemoryKb * 100.0), 0, 100);
 						}
 						this.progressBar_memory.Minimum = 0;
 						this.progressBar_memory.Maximum = 100;
@@ -128,8 +186,8 @@ namespace LPAP.Forms
 				int count = Math.Max(1, usages?.Length ?? 1);
 
 				// Compute grid: try to make it as square as possible
-				int cols = (int)Math.Ceiling(Math.Sqrt(count));
-				int rows = (int)Math.Ceiling(count / (double)cols);
+				int cols = (int) Math.Ceiling(Math.Sqrt(count));
+				int rows = (int) Math.Ceiling(count / (double) cols);
 
 				var bmp = new Bitmap(Math.Max(1, width), Math.Max(1, height));
 				using (var g = Graphics.FromImage(bmp))
@@ -142,8 +200,16 @@ namespace LPAP.Forms
 					int pad = 2;
 					int gridW = width - pad * (cols + 1);
 					int gridH = height - pad * (rows + 1);
-					if (gridW < cols) gridW = cols;
-					if (gridH < rows) gridH = rows;
+					if (gridW < cols)
+					{
+						gridW = cols;
+					}
+
+					if (gridH < rows)
+					{
+						gridH = rows;
+					}
+
 					int cellW = gridW / cols;
 					int cellH = gridH / rows;
 
@@ -165,9 +231,17 @@ namespace LPAP.Forms
 
 						// Fill proportionally from bottom based on usage
 						float u = usages[i];
-						if (u < 0f) u = 0f;
-						if (u > 1f) u = 1f;
-						int filledH = (int)Math.Round(u * cellH);
+						if (u < 0f)
+						{
+							u = 0f;
+						}
+
+						if (u > 1f)
+						{
+							u = 1f;
+						}
+
+						int filledH = (int) Math.Round(u * cellH);
 						if (filledH > 0)
 						{
 							var fillRect = new Rectangle(x + 1, y + cellH - filledH + 1, Math.Max(1, cellW - 2), Math.Max(1, filledH - 2));
@@ -192,8 +266,8 @@ namespace LPAP.Forms
 		private static readonly PerformanceCounter[] _cpuCounters = CreateCpuCounters();
 		private static readonly TimeSpan _samplingInterval = TimeSpan.FromMilliseconds(250);
 		private static DateTime _lastSampleUtc = DateTime.MinValue;
-		private static float[] _lastUsages = Array.Empty<float>();
-		private static readonly object _sampleLock = new();
+		private static float[] _lastUsages = [];
+		private static readonly Lock _sampleLock = new();
 
 		private static PerformanceCounter[] CreateCpuCounters()
 		{
@@ -223,7 +297,7 @@ namespace LPAP.Forms
 				var elapsed = now - _lastSampleUtc;
 				if (elapsed < _samplingInterval && _lastUsages.Length == _cpuCounters.Length)
 				{
-					return Task.FromResult((float[])_lastUsages.Clone());
+					return Task.FromResult((float[]) _lastUsages.Clone());
 				}
 
 				int coreCount = _cpuCounters.Length;
@@ -232,14 +306,22 @@ namespace LPAP.Forms
 				for (int i = 0; i < coreCount; i++)
 				{
 					float percent = _cpuCounters[i].NextValue(); // 0..100
-					if (percent < 0f) percent = 0f;
-					if (percent > 100f) percent = 100f;
+					if (percent < 0f)
+					{
+						percent = 0f;
+					}
+
+					if (percent > 100f)
+					{
+						percent = 100f;
+					}
+
 					usages[i] = percent / 100f;
 				}
 
 				_lastUsages = usages;
 				_lastSampleUtc = now;
-				return Task.FromResult((float[])usages.Clone());
+				return Task.FromResult((float[]) usages.Clone());
 			}
 		}
 
