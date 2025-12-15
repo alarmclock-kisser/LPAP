@@ -1,4 +1,6 @@
 using LPAP.Audio;
+using LPAP.Cuda;
+using LPAP.Forms.Dialogs;
 using LPAP.Forms.Views;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -44,9 +46,15 @@ namespace LPAP.Forms
 
 			AutoApplyOnClose = this.checkBox_autoApply.Checked;
 
+			// Fill cuda devices
+			this.ComboBox_FillCudaDevices();
+			this.ListBox_Bind_CudaLog();
+
 			// initialize statistics monitoring and assign mandatory attribute
 			this._statisticsTimer = this.InitializeStatisticsTimer();
 			this.StatisticsUpdateDelayMs = (int) this.numericUpDown_statisticsUpdateDelay.Value;
+
+
 		}
 
 
@@ -141,5 +149,6 @@ namespace LPAP.Forms
 			LoopControlWindow ??= new LoopControl();
 			LoopControlWindow.Show();
 		}
+
 	}
 }

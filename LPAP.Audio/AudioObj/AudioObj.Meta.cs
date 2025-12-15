@@ -8,6 +8,62 @@ namespace LPAP.Audio
 {
 	public partial class AudioObj
 	{
+		public Dictionary<string, double> Metrics { get; private set; } = new Dictionary<string, double>
+		{
+			{ "Import", 0.0 },{ "Export", 0.0 },{ "Chunk", 0.0 },{ "Aggregate", 0.0 },
+			{ "Normalize", 0.0 },{ "Level", 0.0 },{ "Push", 0.0 },{ "Pull", 0.0 },
+			{ "FFT", 0.0 },{ "IFFT", 0.0 },{ "Stretch", 0.0 },
+			{ "BeatScan", 0.0 },{ "TimingScan", 0.0 }
+		};
+
+		public double this[string metric]
+		{
+			get
+			{
+				// Find by tolower case
+				if (this.Metrics.TryGetValue(metric, out double value))
+				{
+					return value;
+				}
+				else
+				{
+					var key = this.Metrics.Keys.FirstOrDefault(k => k.Equals(metric, StringComparison.OrdinalIgnoreCase));
+					if (key != null)
+					{
+						return this.Metrics[key];
+					}
+					else
+					{
+						// If not found, return 0.0
+						return 0.0;
+					}
+				}
+			}
+			set
+			{
+				// Find by tolower case
+				if (this.Metrics.ContainsKey(metric))
+				{
+					this.Metrics[metric] = value;
+				}
+				else
+				{
+					var key = this.Metrics.Keys.FirstOrDefault(k => k.Equals(metric, StringComparison.OrdinalIgnoreCase));
+					if (key != null)
+					{
+						this.Metrics[key] = value;
+					}
+					else
+					{
+						// Capitalize first letter and add to dictionary
+						string capitalizedMetric = char.ToUpper(metric[0]) + metric.Substring(1).ToLowerInvariant();
+						this.Metrics.Add(capitalizedMetric, value);
+					}
+				}
+			}
+		}
+
+
 		public float ReadBeatsPerMinuteTag(string tag = "TBPM", bool set = true)
 		{
 			// Read bpm metadata if available

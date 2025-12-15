@@ -33,22 +33,22 @@ namespace LPAP.Forms
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool StatisticsEnabled
 		{
-			get => _statsEnabled;
+			get => this._statsEnabled;
 			set
 			{
-				_statsEnabled = value;
+				this._statsEnabled = value;
 				// lambda-like setter behavior: apply immediately if timer exists
-				if (_statisticsTimer != null)
+				if (this._statisticsTimer != null)
 				{
 					try
 					{
 						if (value)
 						{
-							_statisticsTimer.Start();
+							this._statisticsTimer.Start();
 						}
 						else
 						{
-							_statisticsTimer.Stop();
+							this._statisticsTimer.Stop();
 						}
 					}
 					catch { }
@@ -60,16 +60,16 @@ namespace LPAP.Forms
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public int StatisticsUpdateDelayMs
 		{
-			get => _statsUpdateDelayMs;
+			get => this._statsUpdateDelayMs;
 			set
 			{
 				// sanitize
 				int v = value <= 0 ? 1 : value;
-				_statsUpdateDelayMs = v;
+				this._statsUpdateDelayMs = v;
 				// lambda-like setter: update interval immediately if timer exists
-				if (_statisticsTimer != null)
+				if (this._statisticsTimer != null)
 				{
-					try { _statisticsTimer.Interval = v; } catch { }
+					try { this._statisticsTimer.Interval = v; } catch { }
 				}
 			}
 		}
@@ -84,11 +84,11 @@ namespace LPAP.Forms
 
 			var timer = new Timer
 			{
-				Interval = _statsUpdateDelayMs
+				Interval = this._statsUpdateDelayMs
 			};
 			timer.Tick += this.StatisticsTimer_Tick;
 			// respect enabled toggle
-			if (_statsEnabled)
+			if (this._statsEnabled)
 			{
 				timer.Start();
 			}
@@ -100,7 +100,7 @@ namespace LPAP.Forms
 		private void StatisticsTimer_Tick(object? sender, EventArgs e)
 		{
 			// Ensure non-blocking: if a previous sampling pass is still running, skip this tick
-			if (Interlocked.CompareExchange(ref _statsRunning, 1, 0) != 0)
+			if (Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
 			{
 				return;
 			}
@@ -141,9 +141,11 @@ namespace LPAP.Forms
 				}
 				finally
 				{
-					Interlocked.Exchange(ref _statsRunning, 0);
+					Interlocked.Exchange(ref this._statsRunning, 0);
 				}
 			});
+
+			this.UpdateCudaStatistics();
 		}
 
 		private void UpdateMemoryUiSafe()

@@ -137,9 +137,9 @@ namespace LPAP.Audio
 		public Func<long> PlaybackBytesGetter => () => this.PlaybackPositionBytes;
 
 		public CustomTags CustomTags { get; set; } = new();
-		public Int32 OverlapSize { get; internal set; }
-		public Double StretchFactor { get; internal set; }
-		public Int32 ScannedBeatsPerMinute { get; set; }
+		public int OverlapSize { get; internal set; }
+		public double StretchFactor { get; set; }
+		public int ScannedBeatsPerMinute { get; set; }
 
 		internal void AttachPlaybackTracking(PositionTrackingSampleProvider tracking)
 		{

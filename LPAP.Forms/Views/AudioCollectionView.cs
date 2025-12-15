@@ -699,7 +699,7 @@ namespace LPAP.Forms.Views
 			int count = selected.Count;
 			int digits = count.ToString().Length; // 1..3...
 
-			string numberFormat = new string('0', digits); // "0", "00", "000", ...
+			string numberFormat = new('0', digits); // "0", "00", "000", ...
 
 			// Reihenfolge: nach Index in der Liste
 			var ordered = selected
@@ -727,6 +727,24 @@ namespace LPAP.Forms.Views
 
 			// Open one TagEditor for all selected items
 			var tagEditor = new TagEditorDialog(selected);
+		}
+
+		private void visualizerToolStripMenuItem_Click(object sender, EventArgs e)
+		{
+			var audio = this.GetSelectedAudioItems().FirstOrDefault();
+			if (audio == null)
+			{
+				MessageBox.Show("No audio selected.", "Visualizer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+			if (WindowMain.CudaDevice == null)
+			{
+				MessageBox.Show("CUDA is not initialized. Visualizer requires CUDA support.", "Visualizer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+
+			var dlg = new VisualizerDialog(audio);
+			dlg.ShowDialog(this);
 		}
 
 		private void addNumberingToolStripMenuItem_Click(object sender, EventArgs e)
@@ -824,6 +842,7 @@ namespace LPAP.Forms.Views
 			this.Text = newName;
 		}
 
+		
 	}
 
 
