@@ -22,14 +22,33 @@ namespace LPAP.Audio.Processing
 		{
 			_ = outputFilePath; // bewusst ungenutzt (RAM-Variante). Param bleibt für API-Kompatibilität.
 
-			if (audio is null) throw new ArgumentNullException(nameof(audio));
-			if (audio.Data is null) throw new ArgumentException("audio.Data ist null.", nameof(audio));
-			if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
-			if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+			if (audio is null)
+			{
+				throw new ArgumentNullException(nameof(audio));
+			}
+
+			if (audio.Data is null)
+			{
+				throw new ArgumentException("audio.Data ist null.", nameof(audio));
+			}
+
+			if (width <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(width));
+			}
+
+			if (height <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(height));
+			}
 
 			var token = ct ?? CancellationToken.None;
 
-			if (frameRate <= 0) frameRate = 20.0f;
+			if (frameRate <= 0)
+			{
+				frameRate = 20.0f;
+			}
+
 			maxWorkers = maxWorkers <= 0 ? Environment.ProcessorCount : Math.Clamp(maxWorkers, 1, Environment.ProcessorCount);
 
 			int channels = Math.Max(1, audio.Channels);
@@ -69,10 +88,25 @@ namespace LPAP.Audio.Processing
 					? audio.LengthSamples
 					: (audio.Data.LongLength / channels);
 
-				if (startSample < 0) startSample = 0;
-				if (endSample < startSample + 1) endSample = startSample + 1;
-				if (startSample > availableSamplesPerChannel) startSample = availableSamplesPerChannel;
-				if (endSample > availableSamplesPerChannel) endSample = availableSamplesPerChannel;
+				if (startSample < 0)
+				{
+					startSample = 0;
+				}
+
+				if (endSample < startSample + 1)
+				{
+					endSample = startSample + 1;
+				}
+
+				if (startSample > availableSamplesPerChannel)
+				{
+					startSample = availableSamplesPerChannel;
+				}
+
+				if (endSample > availableSamplesPerChannel)
+				{
+					endSample = availableSamplesPerChannel;
+				}
 
 				var bmp = RenderWaveformFrame(audio.Data, channels, width, height, startSample, endSample);
 
@@ -97,14 +131,33 @@ namespace LPAP.Audio.Processing
 			IProgress<double>? progress = null,
 			CancellationToken? ct = null)
 		{
-			if (audio is null) throw new ArgumentNullException(nameof(audio));
-			if (audio.Data is null) throw new ArgumentException("audio.Data ist null.", nameof(audio));
-			if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
-			if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+			if (audio is null)
+			{
+				throw new ArgumentNullException(nameof(audio));
+			}
+
+			if (audio.Data is null)
+			{
+				throw new ArgumentException("audio.Data ist null.", nameof(audio));
+			}
+
+			if (width <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(width));
+			}
+
+			if (height <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(height));
+			}
 
 			var token = ct ?? CancellationToken.None;
 
-			if (frameRate <= 0) frameRate = 20.0f;
+			if (frameRate <= 0)
+			{
+				frameRate = 20.0f;
+			}
+
 			maxWorkers = maxWorkers <= 0 ? Environment.ProcessorCount : Math.Clamp(maxWorkers, 1, Environment.ProcessorCount);
 
 			int channels = Math.Max(1, audio.Channels);
@@ -150,10 +203,25 @@ namespace LPAP.Audio.Processing
 						? audio.LengthSamples
 						: (audio.Data.LongLength / channels);
 
-					if (startSample < 0) startSample = 0;
-					if (endSample < startSample + 1) endSample = startSample + 1;
-					if (startSample > availableSamplesPerChannel) startSample = availableSamplesPerChannel;
-					if (endSample > availableSamplesPerChannel) endSample = availableSamplesPerChannel;
+					if (startSample < 0)
+					{
+						startSample = 0;
+					}
+
+					if (endSample < startSample + 1)
+					{
+						endSample = startSample + 1;
+					}
+
+					if (startSample > availableSamplesPerChannel)
+					{
+						startSample = availableSamplesPerChannel;
+					}
+
+					if (endSample > availableSamplesPerChannel)
+					{
+						endSample = availableSamplesPerChannel;
+					}
 
 					using var bmp = RenderWaveformFrame(audio.Data, channels, width, height, startSample, endSample);
 
@@ -211,7 +279,10 @@ namespace LPAP.Audio.Processing
 
 				long s0 = startSamplePerChannel + (long) Math.Floor(a * frameSamples);
 				long s1 = startSamplePerChannel + (long) Math.Floor(b * frameSamples);
-				if (s1 <= s0) s1 = s0 + 1;
+				if (s1 <= s0)
+				{
+					s1 = s0 + 1;
+				}
 
 				float min = 1f;
 				float max = -1f;
@@ -220,7 +291,10 @@ namespace LPAP.Audio.Processing
 				{
 					// interleaved index: (s * channels + c)
 					long baseIdx = s * channels;
-					if (baseIdx < 0 || baseIdx >= interleaved.LongLength) break;
+					if (baseIdx < 0 || baseIdx >= interleaved.LongLength)
+					{
+						break;
+					}
 
 					float mono = 0f;
 					int cCount = 0;
@@ -235,20 +309,40 @@ namespace LPAP.Audio.Processing
 						}
 					}
 
-					if (cCount > 0) mono /= cCount;
+					if (cCount > 0)
+					{
+						mono /= cCount;
+					}
 
-					if (mono < min) min = mono;
-					if (mono > max) max = mono;
+					if (mono < min)
+					{
+						min = mono;
+					}
+
+					if (mono > max)
+					{
+						max = mono;
+					}
 				}
 
 				// clamp
-				if (min < -1f) min = -1f;
-				if (max > 1f) max = 1f;
+				if (min < -1f)
+				{
+					min = -1f;
+				}
+
+				if (max > 1f)
+				{
+					max = 1f;
+				}
 
 				int y0 = midY - (int) (max * (midY - 1));
 				int y1 = midY - (int) (min * (midY - 1));
 
-				if (y0 > y1) (y0, y1) = (y1, y0);
+				if (y0 > y1)
+				{
+					(y0, y1) = (y1, y0);
+				}
 
 				g.DrawLine(wavePen, x, y0, x, y1);
 			}
@@ -258,8 +352,16 @@ namespace LPAP.Audio.Processing
 
 		private static double EstimateDurationSeconds(long dataLength, int sampleRate, int channels)
 		{
-			if (sampleRate <= 0) return 0;
-			if (channels <= 0) channels = 1;
+			if (sampleRate <= 0)
+			{
+				return 0;
+			}
+
+			if (channels <= 0)
+			{
+				channels = 1;
+			}
+
 			double samplesPerChannel = dataLength / (double) channels;
 			return samplesPerChannel / sampleRate;
 		}
@@ -274,20 +376,28 @@ namespace LPAP.Audio.Processing
 			string stamp = "LPAP_Vis_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
 
 			if (string.IsNullOrWhiteSpace(outputFilePath))
+			{
 				return Path.Combine(Path.GetTempPath(), stamp);
+			}
 
 			outputFilePath = Path.GetFullPath(outputFilePath);
 
 			if (Directory.Exists(outputFilePath))
+			{
 				return Path.Combine(outputFilePath, stamp);
+			}
 
 			if (outputFilePath.EndsWith(Path.DirectorySeparatorChar) || outputFilePath.EndsWith(Path.AltDirectorySeparatorChar))
+			{
 				return outputFilePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			}
 
 			// Datei-Pfad -> dessen Ordner nehmen
 			string? dir = Path.GetDirectoryName(outputFilePath);
 			if (string.IsNullOrWhiteSpace(dir))
+			{
 				return Path.Combine(Path.GetTempPath(), stamp);
+			}
 
 			return Path.Combine(dir, stamp);
 		}

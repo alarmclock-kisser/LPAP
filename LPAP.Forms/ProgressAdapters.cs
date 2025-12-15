@@ -7,7 +7,10 @@ public static class ProgressAdapters
 		ProgressBar bar,
 		int max = 1000)
 	{
-		if (bar == null) throw new ArgumentNullException(nameof(bar));
+		if (bar == null)
+		{
+			throw new ArgumentNullException(nameof(bar));
+		}
 
 		bar.Minimum = 0;
 		bar.Maximum = max;
@@ -16,19 +19,26 @@ public static class ProgressAdapters
 		return new Progress<double>(p =>
 		{
 			if (double.IsNaN(p) || double.IsInfinity(p))
+			{
 				return;
+			}
 
 			p = Math.Clamp(p, 0.0, 1.0);
 			int value = (int) Math.Round(p * max);
 
-			if (bar.IsDisposed) return;
+			if (bar.IsDisposed)
+			{
+				return;
+			}
 
 			if (bar.InvokeRequired)
 			{
 				bar.BeginInvoke(() =>
 				{
 					if (!bar.IsDisposed)
+					{
 						bar.Value = Math.Min(bar.Maximum, Math.Max(bar.Minimum, value));
+					}
 				});
 			}
 			else

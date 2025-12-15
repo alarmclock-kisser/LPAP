@@ -373,19 +373,32 @@ namespace LPAP.Cuda
 			float[] audioData,
 			int audioSampleRate,
 			int audioChannels,
+			float amplitude = 1.0f,
 			string? outputFilePath = null,
 			NvencOptions? options = null,
 			IProgress<double>? progress = null,
 			CancellationToken? ct = null)
 		{
-			if (audioData is null) throw new ArgumentNullException(nameof(audioData));
-			if (audioSampleRate <= 0) throw new ArgumentOutOfRangeException(nameof(audioSampleRate));
-			if (audioChannels <= 0) throw new ArgumentOutOfRangeException(nameof(audioChannels));
+			if (audioData is null)
+			{
+				throw new ArgumentNullException(nameof(audioData));
+			}
+
+			if (audioSampleRate <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(audioSampleRate));
+			}
+
+			if (audioChannels <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(audioChannels));
+			}
 
 			return NvencRenderVideoWithRawAudioAsync(
 				frames, width, height,
 				frameRate,
 				audioData, audioSampleRate, audioChannels,
+				amplitude,
 				outputFilePath,
 				options ?? NvencOptions.H264Default,
 				progress,
@@ -397,18 +410,27 @@ namespace LPAP.Cuda
 			Image[] frames, int width, int height,
 			float frameRate,
 			AudioObj audio,
+			float amplitude = 1.0f,
 			string? outputFilePath = null,
 			NvencOptions? options = null,
 			IProgress<double>? progress = null,
 			CancellationToken? ct = null)
 		{
-			if (audio is null) throw new ArgumentNullException(nameof(audio));
-			if (audio.Data is null) throw new ArgumentException("audio.Data ist null.", nameof(audio));
+			if (audio is null)
+			{
+				throw new ArgumentNullException(nameof(audio));
+			}
+
+			if (audio.Data is null)
+			{
+				throw new ArgumentException("audio.Data ist null.", nameof(audio));
+			}
 
 			return NvencRenderVideoWithRawAudioAsync(
 				frames, width, height,
 				frameRate,
 				audio.Data, audio.SampleRate, audio.Channels,
+				amplitude,
 				outputFilePath,
 				options ?? NvencOptions.H264Default,
 				progress,
@@ -585,7 +607,9 @@ namespace LPAP.Cuda
 			sb.Append($"-c:v {options.VideoCodec} ");
 
 			if (!string.IsNullOrWhiteSpace(options.Preset))
+			{
 				sb.Append($"-preset {options.Preset} ");
+			}
 
 			if (options.ConstantQuality.HasValue)
 			{
@@ -594,12 +618,21 @@ namespace LPAP.Cuda
 			else if (options.VideoBitrateKbps.HasValue)
 			{
 				sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
-				if (options.MaxBitrateKbps.HasValue) sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
-				if (options.BufferSizeKbps.HasValue) sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+				if (options.MaxBitrateKbps.HasValue)
+				{
+					sb.Append(CultureInfo.InvariantCulture, $"-maxrate {options.MaxBitrateKbps.Value}k ");
+				}
+
+				if (options.BufferSizeKbps.HasValue)
+				{
+					sb.Append(CultureInfo.InvariantCulture, $"-bufsize {options.BufferSizeKbps.Value}k ");
+				}
 			}
 
 			if (!string.IsNullOrWhiteSpace(options.Profile))
+			{
 				sb.Append($"-profile:v {options.Profile} ");
+			}
 
 			sb.Append("-pix_fmt yuv420p ");
 
@@ -607,7 +640,9 @@ namespace LPAP.Cuda
 			sb.Append("-c:a aac -b:a 192k -shortest ");
 
 			if (options.FastStart)
+			{
 				sb.Append("-movflags +faststart ");
+			}
 
 			sb.Append("-y ");
 			sb.Append($"\"{outputPath}\"");
@@ -721,39 +756,81 @@ namespace LPAP.Cuda
 			float[] audioData,
 			int audioSampleRate,
 			int audioChannels,
+			float amplitude,
 			string? outputFilePath,
 			NvencOptions options,
 			IProgress<double>? progress,
 			CancellationToken? ct)
 		{
 			if (frames is null || frames.Length == 0)
+			{
 				throw new ArgumentException("frames darf nicht null/leer sein.", nameof(frames));
+			}
 
 			var token = ct ?? CancellationToken.None;
+
+			float[] sourceAudio = audioData;
+			if (!float.IsNaN(amplitude) && !float.IsInfinity(amplitude) && amplitude > 0.0f && Math.Abs(amplitude - 1.0f) > 1e-6f)
+			{
+				float scale = 1.0f / amplitude;
+
+				sourceAudio = await Task.Run(() =>
+				{
+					var src = audioData;
+					var dst = new float[src.Length];
+
+					Parallel.For(0, src.Length, i =>
+					{
+						float v = src[i] * scale;
+						// clamp in [-1, 1] um Clipping vor PCM-Konvertierung zu vermeiden
+						if (v > 1f) v = 1f;
+						else if (v < -1f) v = -1f;
+						dst[i] = v;
+					});
+
+					return dst;
+				}, token).ConfigureAwait(false);
+			}
 
 			// 1) Dimensionen bestimmen (wie bisher)
 			if (width <= 0 || height <= 0)
 			{
 				GetMaxDimensions(frames, out var maxW, out var maxH);
-				if (width <= 0) width = maxW;
-				if (height <= 0) height = maxH;
+				if (width <= 0)
+				{
+					width = maxW;
+				}
+
+				if (height <= 0)
+				{
+					height = maxH;
+				}
 			}
 			if (width <= 0 || height <= 0)
+			{
 				throw new ArgumentOutOfRangeException("width/height müssen > 0 sein (oder aus Frames ableitbar).");
+			}
 
 			// 2) Audio-Dauer (aus RAM)
 			double audioSeconds = 0;
 			if (audioData.Length > 0 && audioSampleRate > 0 && audioChannels > 0)
+			{
 				audioSeconds = (audioData.Length / (double) audioChannels) / audioSampleRate;
+			}
 
 			// frameRate <= 0 => an Audio anpassen
 			if (frameRate <= 0 && audioSeconds > 0.001)
 			{
 				frameRate = (float) (frames.Length / audioSeconds);
-				if (frameRate < 1e-3f) frameRate = 20.0f;
+				if (frameRate < 1e-3f)
+				{
+					frameRate = 20.0f;
+				}
 			}
 			if (frameRate <= 0)
+			{
 				throw new ArgumentOutOfRangeException(nameof(frameRate), "frameRate muss > 0 sein (oder Audio muss gültig sein).");
+			}
 
 			// 3) Output-Pfad
 			var resolvedOutputPath = ResolveOutputPath(outputFilePath);
@@ -800,7 +877,9 @@ namespace LPAP.Cuda
 			try
 			{
 				if (!proc.Start())
+				{
 					throw new InvalidOperationException("FFmpeg konnte nicht gestartet werden.");
+				}
 
 				// stderr sammeln
 				var stderrTask = Task.Run(async () =>
@@ -809,7 +888,9 @@ namespace LPAP.Cuda
 					{
 						string? line;
 						while ((line = await proc.StandardError.ReadLineAsync().ConfigureAwait(false)) != null)
+						{
 							stderrSb.AppendLine(line);
+						}
 					}
 					catch { }
 				}, token);
@@ -831,8 +912,15 @@ namespace LPAP.Cuda
 								{
 									var sec = outMs / 1_000_000.0;
 									var p = totalSeconds > 0 ? sec / totalSeconds : 0.0;
-									if (p < 0) p = 0;
-									if (p > 1) p = 1;
+									if (p < 0)
+									{
+										p = 0;
+									}
+
+									if (p > 1)
+									{
+										p = 1;
+									}
 
 									if (p >= lastReported + 0.002 || p >= 1.0)
 									{
@@ -872,8 +960,14 @@ namespace LPAP.Cuda
 								float f = audioData[i + k];
 
 								// clamp
-								if (f > 1f) f = 1f;
-								else if (f < -1f) f = -1f;
+								if (f > 1f)
+								{
+									f = 1f;
+								}
+								else if (f < -1f)
+								{
+									f = -1f;
+								}
 
 								short s = (short) Math.Round(f * 32767f);
 
@@ -1118,8 +1212,15 @@ namespace LPAP.Cuda
 			string[] imageFilePaths, string? imagesDir = null,
 			int maxWorkers = 0, IProgress<double>? progress = null, CancellationToken ct = default)
 		{
-			if (imageFilePaths is null) throw new ArgumentNullException(nameof(imageFilePaths));
-			if (imageFilePaths.Length == 0) return Array.Empty<Image>();
+			if (imageFilePaths is null)
+			{
+				throw new ArgumentNullException(nameof(imageFilePaths));
+			}
+
+			if (imageFilePaths.Length == 0)
+			{
+				return Array.Empty<Image>();
+			}
 
 			maxWorkers = maxWorkers <= 0
 				? Environment.ProcessorCount
@@ -1135,17 +1236,24 @@ namespace LPAP.Cuda
 					var trimmed = p.Trim();
 
 					if (Path.IsPathRooted(trimmed))
+					{
 						return Path.GetFullPath(trimmed);
+					}
 
 					if (baseDir != null)
+					{
 						return Path.GetFullPath(Path.Combine(baseDir, trimmed));
+					}
 
 					return Path.GetFullPath(trimmed);
 				})
 				.ToArray();
 
 			int total = paths.Length;
-			if (total == 0) return Array.Empty<Image>();
+			if (total == 0)
+			{
+				return Array.Empty<Image>();
+			}
 
 			progress?.Report(0);
 
@@ -1170,7 +1278,9 @@ namespace LPAP.Cuda
 
 						// Wenn Datei fehlt -> null
 						if (!File.Exists(path))
+						{
 							return;
+						}
 
 						// Wichtig: Image.FromFile hält File-Handle offen.
 						// Daher: FileStream + Clone, dann Stream schließen.

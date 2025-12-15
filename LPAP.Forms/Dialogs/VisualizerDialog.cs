@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
@@ -120,14 +121,17 @@ namespace LPAP.Forms.Dialogs
 				audio = await audio.CopyFromSelectionAsync(startSample, endSample);
 			}
 
+			Stopwatch sw = Stopwatch.StartNew();
+
 			string? outputPath = null;
+			string? tempFramesDir = Path.GetTempPath();
+
 			IProgress<double> progress = ProgressAdapters.ToProgressBar(this.progressBar_rendering);
 			try
 			{
 				Image[] frames = [];
 				if (offload)
 				{
-					string? tempFramesDir = Path.GetTempPath();
 					tempFramesDir = await AudioProcessor.RenderVisualizerImagesToTempDirAsync(audio, width, height, frameRate, null, this.MaxWorkers, progress, null);
 					frames = await NvencVideoRenderer.LoadImagesParallelAsync([], tempFramesDir, this.MaxWorkers);
 				}
@@ -142,17 +146,35 @@ namespace LPAP.Forms.Dialogs
 
 				if (outputPath != null)
 				{
-					CudaService.Log("Successfully rendered MP4");
-					CudaService.Log(outputPath);
+					CudaService.Log("Successfully rendered MP4", $"{sw.Elapsed.TotalSeconds:F3} elapsed", 0, "Visualizer");
+					CudaService.Log(outputPath, "", 0, "Visualizer");
 				}
 				else
 				{
-					CudaService.Log("Error rendering video via NVENC");
+					CudaService.Log("Error rendering video via NVENC", "", 0, "Visualizer");
 				}
 			}
 			catch (Exception ex)
 			{
 				CudaService.Log(ex);
+			}
+			finally
+			{
+				this.Audio["visualizer"] = sw.Elapsed.TotalSeconds;
+				sw.Stop();
+				try
+				{
+					if (tempFramesDir != null)
+					{
+						Directory.Delete(tempFramesDir, true);
+					}
+				}
+				catch (Exception ex)
+				{
+					CudaService.Log(ex, "Error deleting temporary frames directory", 0, "Visualizer");
+				}
+
+				this.progressBar_rendering.Invoke(() => this.progressBar_rendering.Value = 0);
 			}
 
 			this.DialogResult = DialogResult.OK;
