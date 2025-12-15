@@ -5,7 +5,8 @@ public static class ProgressAdapters
 {
 	public static IProgress<double> ToProgressBar(
 		ProgressBar bar,
-		int max = 1000)
+		int max = 1000,
+		bool growOnly = true)
 	{
 		if (bar == null)
 		{
@@ -24,26 +25,40 @@ public static class ProgressAdapters
 			}
 
 			p = Math.Clamp(p, 0.0, 1.0);
-			int value = (int) Math.Round(p * max);
+			int target = (int)Math.Round(p * max);
 
 			if (bar.IsDisposed)
 			{
 				return;
 			}
 
+			void Apply()
+			{
+				if (bar.IsDisposed)
+				{
+					return;
+				}
+
+				int clamped = Math.Min(bar.Maximum, Math.Max(bar.Minimum, target));
+
+				// Monotonie erzwingen: nur erhöhen, niemals verringern
+				if (clamped > bar.Value && growOnly)
+				{
+					bar.Value = clamped;
+				}
+				else if (!growOnly)
+				{
+					bar.Value = clamped;
+				}
+			}
+
 			if (bar.InvokeRequired)
 			{
-				bar.BeginInvoke(() =>
-				{
-					if (!bar.IsDisposed)
-					{
-						bar.Value = Math.Min(bar.Maximum, Math.Max(bar.Minimum, value));
-					}
-				});
+				bar.BeginInvoke((Action)Apply);
 			}
 			else
 			{
-				bar.Value = Math.Min(bar.Maximum, Math.Max(bar.Minimum, value));
+				Apply();
 			}
 		});
 	}

@@ -74,7 +74,7 @@ namespace LPAP.Forms
 		{
 			if (this.Cuda.Initialized)
 			{
-				double load = this.Cuda.GpuLoadPercent;
+				double load = this.Cuda.GpuLoadPercent * 100;
 				double total = this.Cuda.TotalMemoryMb;
 				double used = this.Cuda.AllocatedMemoryMb;
 				double free = this.Cuda.AvailableMemoryMb;

@@ -42,10 +42,13 @@
 			this.numericUpDown_threads = new NumericUpDown();
 			this.label_info_threads = new Label();
 			this.label_cuda = new Label();
+			this.numericUpDown_volume = new NumericUpDown();
+			this.label_info_volume = new Label();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_frameRate).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_startSeconds).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_endSeconds).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_threads).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_volume).BeginInit();
 			this.SuspendLayout();
 			// 
 			// button_render
@@ -74,6 +77,7 @@
 			this.comboBox_resolution.Size = new Size(200, 23);
 			this.comboBox_resolution.TabIndex = 2;
 			this.comboBox_resolution.Text = "Select Resolution...";
+			this.comboBox_resolution.SelectedIndexChanged += this.comboBox_resolution_SelectedIndexChanged;
 			// 
 			// numericUpDown_frameRate
 			// 
@@ -183,11 +187,32 @@
 			this.label_cuda.TabIndex = 13;
 			this.label_cuda.Text = "CUDA: <Offline>";
 			// 
+			// numericUpDown_volume
+			// 
+			this.numericUpDown_volume.DecimalPlaces = 1;
+			this.numericUpDown_volume.Location = new Point(164, 309);
+			this.numericUpDown_volume.Maximum = new decimal(new int[] { 150, 0, 0, 0 });
+			this.numericUpDown_volume.Name = "numericUpDown_volume";
+			this.numericUpDown_volume.Size = new Size(70, 23);
+			this.numericUpDown_volume.TabIndex = 14;
+			this.numericUpDown_volume.Value = new decimal(new int[] { 100, 0, 0, 0 });
+			// 
+			// label_info_volume
+			// 
+			this.label_info_volume.AutoSize = true;
+			this.label_info_volume.Location = new Point(164, 291);
+			this.label_info_volume.Name = "label_info_volume";
+			this.label_info_volume.Size = new Size(60, 15);
+			this.label_info_volume.TabIndex = 15;
+			this.label_info_volume.Text = "Volume %";
+			// 
 			// VisualizerDialog
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(464, 441);
+			this.Controls.Add(this.label_info_volume);
+			this.Controls.Add(this.numericUpDown_volume);
 			this.Controls.Add(this.label_cuda);
 			this.Controls.Add(this.label_info_threads);
 			this.Controls.Add(this.numericUpDown_threads);
@@ -210,6 +235,7 @@
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_startSeconds).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_endSeconds).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_threads).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_volume).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -230,5 +256,7 @@
 		private NumericUpDown numericUpDown_threads;
 		private Label label_info_threads;
 		private Label label_cuda;
+		private NumericUpDown numericUpDown_volume;
+		private Label label_info_volume;
 	}
 }

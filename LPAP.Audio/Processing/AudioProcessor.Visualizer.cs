@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Buffers;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace LPAP.Audio.Processing
@@ -243,6 +245,233 @@ namespace LPAP.Audio.Processing
 			{
 				// Optional: Bei Fehler/Cancel kannst du das Dir löschen. Ich lasse es bewusst stehen (Debug/Partial Output).
 				throw;
+			}
+		}
+
+		public readonly struct FramePacket
+		{
+			public FramePacket(int index, byte[] buffer, int length)
+			{
+				this.Index = index;
+				this.Buffer = buffer;
+				this.Length = length;
+			}
+			public int Index { get; }
+			public byte[] Buffer { get; }   // BGRA
+			public int Length { get; }
+		}
+
+		public static (ChannelReader<FramePacket> reader, int frameCount)
+			RenderVisualizerFramesBgraChannel(
+				AudioObj audio,
+				int width,
+				int height,
+				float frameRate = 20.0f,
+				int maxWorkers = 0,
+				int channelCapacity = 0,
+				IProgress<double>? progress = null,
+				CancellationToken? ct = null)
+		{
+			if (audio == null)
+			{
+				throw new ArgumentNullException(nameof(audio));
+			}
+
+			if (audio.Data == null)
+			{
+				throw new ArgumentException("audio.Data null");
+			}
+
+			if (width <= 0 || height <= 0)
+			{
+				throw new ArgumentOutOfRangeException();
+			}
+
+			var token = ct ?? CancellationToken.None;
+			if (frameRate <= 0)
+			{
+				frameRate = 20f;
+			}
+
+			maxWorkers = maxWorkers <= 0
+				? Environment.ProcessorCount
+				: Math.Clamp(maxWorkers, 1, Environment.ProcessorCount);
+
+			if (channelCapacity <= 0)
+			{
+				channelCapacity = Math.Max(2, maxWorkers * 2);
+			}
+
+			int channels = Math.Max(1, audio.Channels);
+			int sampleRate = Math.Max(1, audio.SampleRate);
+
+			double duration = audio.Duration.TotalSeconds > 0
+				? audio.Duration.TotalSeconds
+				: (audio.Data.Length / (double) channels) / sampleRate;
+
+			int frameCount = Math.Max(1, (int) Math.Ceiling(duration * frameRate));
+			int frameBytes = checked(width * height * 4);
+
+			var channel = Channel.CreateBounded<FramePacket>(
+				new BoundedChannelOptions(channelCapacity)
+				{
+					FullMode = BoundedChannelFullMode.Wait,
+					SingleReader = false,
+					SingleWriter = false
+				});
+
+			progress?.Report(0.0);
+			int produced = 0;
+
+			_ = Task.Run(async () =>
+			{
+				var opts = new ParallelOptions
+				{
+					MaxDegreeOfParallelism = maxWorkers,
+					CancellationToken = token
+				};
+
+				try
+				{
+					await Parallel.ForAsync(0, frameCount, opts, async (i, innerCt) =>
+					{
+						innerCt.ThrowIfCancellationRequested();
+
+						double t0 = i / (double) frameRate;
+						double t1 = (i + 1) / (double) frameRate;
+
+						long s0 = (long) (t0 * sampleRate);
+						long s1 = (long) (t1 * sampleRate);
+						if (s1 <= s0)
+						{
+							s1 = s0 + 1;
+						}
+
+						byte[] buffer = ArrayPool<byte>.Shared.Rent(frameBytes);
+
+						try
+						{
+							RenderWaveformToBgra(
+								audio.Data,
+								channels,
+								width,
+								height,
+								s0,
+								s1,
+								buffer);
+
+							await channel.Writer
+								.WriteAsync(new FramePacket(i, buffer, frameBytes), innerCt)
+								.ConfigureAwait(false);
+
+							buffer = null!;
+							int now = Interlocked.Increment(ref produced);
+							progress?.Report(now / (double) frameCount);
+						}
+						finally
+						{
+							if (buffer != null)
+							{
+								ArrayPool<byte>.Shared.Return(buffer);
+							}
+						}
+					}).ConfigureAwait(false);
+
+					channel.Writer.TryComplete();
+				}
+				catch (Exception ex)
+				{
+					channel.Writer.TryComplete(ex);
+				}
+			}, token);
+
+			return (channel.Reader, frameCount);
+		}
+
+		// -------------------------
+		// CORE: Waveform → BGRA
+		// -------------------------
+		private static void RenderWaveformToBgra(
+			float[] interleaved,
+			int channels,
+			int width,
+			int height,
+			long startSample,
+			long endSample,
+			byte[] dst)
+		{
+			int midY = height / 2;
+			int frameSamples = (int) Math.Max(1, endSample - startSample);
+
+			// clear black
+			Array.Clear(dst, 0, width * height * 4);
+
+			for (int x = 0; x < width; x++)
+			{
+				long a = startSample + (long) (x / (double) width * frameSamples);
+				long b = startSample + (long) ((x + 1) / (double) width * frameSamples);
+				if (b <= a)
+				{
+					b = a + 1;
+				}
+
+				float min = 1f, max = -1f;
+
+				for (long s = a; s < b; s++)
+				{
+					long baseIdx = s * channels;
+					if (baseIdx >= interleaved.LongLength)
+					{
+						break;
+					}
+
+					float mono = 0f;
+					int ccount = 0;
+
+					for (int c = 0; c < channels; c++)
+					{
+						long idx = baseIdx + c;
+						if (idx < interleaved.LongLength)
+						{
+							mono += interleaved[idx];
+							ccount++;
+						}
+					}
+
+					if (ccount > 0)
+					{
+						mono /= ccount;
+					}
+
+					if (mono < min)
+					{
+						min = mono;
+					}
+
+					if (mono > max)
+					{
+						max = mono;
+					}
+				}
+
+				min = Math.Clamp(min, -1f, 1f);
+				max = Math.Clamp(max, -1f, 1f);
+
+				int y0 = midY - (int) (max * (midY - 1));
+				int y1 = midY - (int) (min * (midY - 1));
+				if (y0 > y1)
+				{
+					(y0, y1) = (y1, y0);
+				}
+
+				for (int y = y0; y <= y1; y++)
+				{
+					int i = (y * width + x) * 4;
+					dst[i + 0] = 0;     // B
+					dst[i + 1] = 255;   // G
+					dst[i + 2] = 0;     // R
+					dst[i + 3] = 255;   // A
+				}
 			}
 		}
 

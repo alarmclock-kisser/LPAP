@@ -1,5 +1,6 @@
 ﻿#nullable enable
 using LPAP.Audio;
+using LPAP.Audio.Processing;
 using System;
 using System.Buffers;
 using System.Diagnostics;
@@ -10,6 +11,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 
@@ -54,6 +56,7 @@ namespace LPAP.Cuda
 		public static readonly string[] CommonResolutions =
 		[
 			"3840x2160",
+			"2560x1440",
 			"1920x1080",
 			"1280x720",
 			"854x480",
@@ -299,70 +302,65 @@ namespace LPAP.Cuda
 			}
 		}
 
-		private static async Task WriteFramesToStdinAsync(
-			Process proc,
-			Image[] frames,
-			int targetW,
-			int targetH,
-			IProgress<double>? progress,
-			double totalSeconds,
+		public static async Task<string?> NvencRenderVideoAsync(
+			string framesDir,
+			int width,
+			int height,
 			float frameRate,
-			CancellationToken token)
+			AudioObj audio,
+			float amplitude = 1.0f,
+			string searchPattern = "*.png",
+			string? outputFilePath = null,
+			NvencOptions? options = null,
+			IProgress<double>? progress = null,
+			CancellationToken? ct = null)
 		{
-			// BGRA = 4 bytes/pixel
-			var frameBytes = checked(targetW * targetH * 4);
-
-			// Pool buffer für eine Frame
-			var buffer = ArrayPool<byte>.Shared.Rent(frameBytes);
-
-			try
+			if (string.IsNullOrWhiteSpace(framesDir))
 			{
-				using var stdin = proc.StandardInput.BaseStream;
-
-				// Für höhere Stabilität: wir zeichnen jedes Image auf ein Bitmap exakt target size
-				// und schreiben dann LockBits(BGRA) direkt in den Buffer.
-				using var canvas = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
-
-				// Wir nutzen hier pro Frame ein Graphics-Objekt neu (sauber), du kannst es auch cachen.
-				for (int i = 0; i < frames.Length; i++)
-				{
-					token.ThrowIfCancellationRequested();
-
-					using (var g = Graphics.FromImage(canvas))
-					{
-						g.Clear(Color.Black);
-						// Top-left platzieren; wenn du "fit/center" willst, kannst du hier skalieren.
-						g.DrawImage(frames[i], 0, 0, frames[i].Width, frames[i].Height);
-					}
-
-					CopyBitmap32bppArgbToBgraBuffer(canvas, buffer, frameBytes);
-
-					await stdin.WriteAsync(buffer.AsMemory(0, frameBytes), token).ConfigureAwait(false);
-
-					// Optional: grober Progress auch während dem Schreiben (zusätzlich zu ffmpeg-progress)
-					// Das hilft, falls -progress nicht feuert (z.B. ganz alte builds).
-					if (progress != null && totalSeconds > 0)
-					{
-						var writtenSec = i / (double) frameRate;
-						var p = writtenSec / totalSeconds;
-						if (p < 0)
-						{
-							p = 0;
-						}
-
-						if (p > 0.999)
-						{
-							p = 0.999;
-						}
-
-						progress.Report(p);
-					}
-				}
+				throw new ArgumentNullException(nameof(framesDir));
 			}
-			finally
+
+			if (!Directory.Exists(framesDir))
 			{
-				ArrayPool<byte>.Shared.Return(buffer);
+				throw new DirectoryNotFoundException(framesDir);
 			}
+
+			if (width <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(width));
+			}
+
+			if (height <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(height));
+			}
+
+			if (audio is null)
+			{
+				throw new ArgumentNullException(nameof(audio));
+			}
+
+			if (audio.Data is null)
+			{
+				throw new ArgumentException("audio.Data ist null.", nameof(audio));
+			}
+
+			var token = ct ?? CancellationToken.None;
+
+			var files = Directory.EnumerateFiles(framesDir, searchPattern, SearchOption.TopDirectoryOnly)
+								 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+								 .ToArray();
+
+			if (files.Length == 0)
+			{
+				throw new InvalidOperationException($"Keine Frames gefunden in '{framesDir}' (Pattern '{searchPattern}').");
+			}
+
+			// Jetzt NVENC mit "lazy frames" statt Image[]
+			return await NvencRenderVideoFromFileListAsync(
+				files, width, height, frameRate, audio, amplitude,
+				outputFilePath, options ?? NvencOptions.H264Default,
+				progress, token).ConfigureAwait(false);
 		}
 
 		public static Task<string?> NvencRenderVideoAsync(
@@ -437,8 +435,161 @@ namespace LPAP.Cuda
 				ct);
 		}
 
+		public static Task<string?> NvencRenderVideoAsync(
+		ChannelReader<AudioProcessor.FramePacket> frames,
+		int frameCount,
+		int width,
+		int height,
+		float frameRate,
+		AudioObj audio,
+		string? outputFilePath = null,
+		NvencOptions? options = null,
+		IProgress<double>? progress = null,
+		CancellationToken? ct = null)
+		{
+			return NvencRenderVideoFromChannelAsync(
+				frames, frameCount, width, height, frameRate,
+				audio, outputFilePath,
+				options ?? NvencOptions.H264Default,
+				progress,
+				ct ?? CancellationToken.None);
+		}
+
+		private static async Task<string?> NvencRenderVideoFromChannelAsync(
+			ChannelReader<AudioProcessor.FramePacket> reader,
+			int frameCount,
+			int width,
+			int height,
+			float frameRate,
+			AudioObj audio,
+			string? outputFilePath,
+			NvencOptions options,
+			IProgress<double>? progress,
+			CancellationToken token)
+		{
+			string output = ResolveOutputPath(outputFilePath);
+			Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+
+			int expectedLen = width * height * 4;
+			progress?.Report(0);
+
+			// ffmpeg args (video only, audio weglassen hier falls gewünscht)
+			string args =
+				$"-hide_banner -loglevel error -nostats -progress pipe:1 " +
+				$"-f rawvideo -pix_fmt bgra -s {width}x{height} -r {frameRate.ToString(CultureInfo.InvariantCulture)} -i pipe:0 " +
+				$"-c:v {options.VideoCodec} -preset {options.Preset} -pix_fmt yuv420p -y \"{output}\"";
+
+			var psi = new ProcessStartInfo
+			{
+				FileName = "ffmpeg",
+				Arguments = args,
+				UseShellExecute = false,
+				RedirectStandardInput = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				CreateNoWindow = true
+			};
+
+			using var proc = Process.Start(psi)!;
+			using var stdin = proc.StandardInput.BaseStream;
+
+			var pending = new Dictionary<int, AudioProcessor.FramePacket>();
+			int next = 0;
+
+			await foreach (var pkt in reader.ReadAllAsync(token))
+			{
+				if (pkt.Length != expectedLen)
+				{
+					ArrayPool<byte>.Shared.Return(pkt.Buffer);
+					throw new InvalidOperationException("Frame size mismatch");
+				}
+
+				pending[pkt.Index] = pkt;
+
+				while (pending.TryGetValue(next, out var cur))
+				{
+					pending.Remove(next);
+					await stdin.WriteAsync(cur.Buffer.AsMemory(0, cur.Length), token);
+					ArrayPool<byte>.Shared.Return(cur.Buffer);
+					next++;
+				}
+			}
+
+			stdin.Close();
+			await proc.WaitForExitAsync(token);
+
+			progress?.Report(1.0);
+			return output;
+		}
 
 
+
+
+		private static async Task WriteFramesToStdinAsync(
+			Process proc,
+			Image[] frames,
+			int targetW,
+			int targetH,
+			IProgress<double>? progress,
+			double totalSeconds,
+			float frameRate,
+			CancellationToken token)
+		{
+			// BGRA = 4 bytes/pixel
+			var frameBytes = checked(targetW * targetH * 4);
+
+			// Pool buffer für eine Frame
+			var buffer = ArrayPool<byte>.Shared.Rent(frameBytes);
+
+			try
+			{
+				using var stdin = proc.StandardInput.BaseStream;
+
+				// Für höhere Stabilität: wir zeichnen jedes Image auf ein Bitmap exakt target size
+				// und schreiben dann LockBits(BGRA) direkt in den Buffer.
+				using var canvas = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
+
+				// Wir nutzen hier pro Frame ein Graphics-Objekt neu (sauber), du kannst es auch cachen.
+				for (int i = 0; i < frames.Length; i++)
+				{
+					token.ThrowIfCancellationRequested();
+
+					using (var g = Graphics.FromImage(canvas))
+					{
+						g.Clear(Color.Black);
+						// Top-left platzieren; wenn du "fit/center" willst, kannst du hier skalieren.
+						g.DrawImage(frames[i], 0, 0, frames[i].Width, frames[i].Height);
+					}
+
+					CopyBitmap32bppArgbToBgraBuffer(canvas, buffer, frameBytes);
+
+					await stdin.WriteAsync(buffer.AsMemory(0, frameBytes), token).ConfigureAwait(false);
+
+					// Optional: grober Progress auch während dem Schreiben (zusätzlich zu ffmpeg-progress)
+					// Das hilft, falls -progress nicht feuert (z.B. ganz alte builds).
+					if (progress != null && totalSeconds > 0)
+					{
+						var writtenSec = i / (double) frameRate;
+						var p = writtenSec / totalSeconds;
+						if (p < 0)
+						{
+							p = 0;
+						}
+
+						if (p > 0.999)
+						{
+							p = 0.999;
+						}
+
+						progress.Report(p);
+					}
+				}
+			}
+			finally
+			{
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
+		}
 
 		private static void CopyBitmap32bppArgbToBgraBuffer(Bitmap bmp, byte[] dst, int expectedBytes)
 		{
@@ -783,8 +934,15 @@ namespace LPAP.Cuda
 					{
 						float v = src[i] * scale;
 						// clamp in [-1, 1] um Clipping vor PCM-Konvertierung zu vermeiden
-						if (v > 1f) v = 1f;
-						else if (v < -1f) v = -1f;
+						if (v > 1f)
+						{
+							v = 1f;
+						}
+						else if (v < -1f)
+						{
+							v = -1f;
+						}
+
 						dst[i] = v;
 					});
 
@@ -1024,6 +1182,275 @@ namespace LPAP.Cuda
 			}
 		}
 
+		private static async Task<string?> NvencRenderVideoFromFileListAsync(
+			string[] frameFiles,
+			int width,
+			int height,
+			float frameRate,
+			AudioObj audio,
+			float amplitude,
+			string? outputFilePath,
+			NvencOptions options,
+			IProgress<double>? progress,
+			CancellationToken token)
+		{
+			// Audio RAM -> Pipe (dein existierender Codepfad)
+			// Dafür brauchen wir nur ein "frames.Length" – das ist frameFiles.Length (ohne RAM für Images).
+			// Minimal-Invasiv: wir kopieren deinen NvencRenderVideoWithRawAudioAsync-Flow,
+			// aber ersetzen WriteFramesToStdinAsync(...) durch WriteFrameFilesToStdinAsync(...)
+
+			float[] audioData = audio.Data;
+			int audioSampleRate = audio.SampleRate;
+			int audioChannels = audio.Channels;
+
+			// Amplitude-Skalierung: du machst das aktuell parallel mit Kopie,
+			// aber BUG: du verwendest danach wieder audioData statt sourceAudio in audioTask.
+			// -> hier korrekt:
+			float[] sourceAudio = audioData;
+			if (!float.IsNaN(amplitude) && !float.IsInfinity(amplitude) && amplitude > 0.0f && Math.Abs(amplitude - 1.0f) > 1e-6f)
+			{
+				float scale = 1.0f / amplitude;
+				sourceAudio = await Task.Run(() =>
+				{
+					var dst = new float[audioData.Length];
+					Parallel.For(0, audioData.Length, i =>
+					{
+						float v = audioData[i] * scale;
+						if (v > 1f)
+						{
+							v = 1f;
+						}
+						else if (v < -1f)
+						{
+							v = -1f;
+						}
+
+						dst[i] = v;
+					});
+					return dst;
+				}, token).ConfigureAwait(false);
+			}
+
+			// Audio-Dauer
+			double audioSeconds = (sourceAudio.Length > 0 && audioSampleRate > 0 && audioChannels > 0)
+				? (sourceAudio.Length / (double) audioChannels) / audioSampleRate
+				: 0;
+
+			if (frameRate <= 0 && audioSeconds > 0.001)
+			{
+				frameRate = (float) (frameFiles.Length / audioSeconds);
+			}
+
+			if (frameRate <= 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(frameRate), "frameRate muss > 0 sein (oder Audio muss gültig sein).");
+			}
+
+			var resolvedOutputPath = ResolveOutputPath(outputFilePath);
+			Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
+
+			var totalVideoSeconds = frameFiles.Length / (double) frameRate;
+			var totalSeconds = audioSeconds > 0.001 ? Math.Max(totalVideoSeconds, audioSeconds) : totalVideoSeconds;
+
+			progress?.Report(0.0);
+
+			string pipeName = "lpap_nvenc_audio_" + Guid.NewGuid().ToString("N");
+			string pipePath = $@"\\.\pipe\{pipeName}";
+
+			var args = BuildFfmpegArgsWithRawAudioPipe(
+				width, height, frameRate,
+				pipePath, audioSampleRate, audioChannels,
+				resolvedOutputPath,
+				options);
+
+			var psi = new ProcessStartInfo
+			{
+				FileName = "ffmpeg",
+				Arguments = args,
+				UseShellExecute = false,
+				RedirectStandardInput = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				CreateNoWindow = true
+			};
+
+			using var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+			var stderrSb = new StringBuilder();
+
+			using var audioPipe = new System.IO.Pipes.NamedPipeServerStream(
+				pipeName,
+				System.IO.Pipes.PipeDirection.Out,
+				1,
+				System.IO.Pipes.PipeTransmissionMode.Byte,
+				System.IO.Pipes.PipeOptions.Asynchronous);
+
+			try
+			{
+				if (!proc.Start())
+				{
+					throw new InvalidOperationException("FFmpeg konnte nicht gestartet werden.");
+				}
+
+				var stderrTask = Task.Run(async () =>
+				{
+					try
+					{
+						string? line;
+						while ((line = await proc.StandardError.ReadLineAsync().ConfigureAwait(false)) != null)
+						{
+							stderrSb.AppendLine(line);
+						}
+					}
+					catch { }
+				}, token);
+
+				// WICHTIG: nur FFmpeg-progress verwenden (sonst jittert es).
+				var progressTask = Task.Run(async () =>
+				{
+					try
+					{
+						string? line;
+						double last = 0.0;
+						while ((line = await proc.StandardOutput.ReadLineAsync().ConfigureAwait(false)) != null)
+						{
+							if (line.StartsWith("out_time_ms=", StringComparison.OrdinalIgnoreCase))
+							{
+								var val = line["out_time_ms=".Length..].Trim();
+								if (long.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out var outMs))
+								{
+									var sec = outMs / 1_000_000.0;
+									var p = totalSeconds > 0 ? sec / totalSeconds : 0.0;
+									p = Math.Clamp(p, 0.0, 1.0);
+									if (p >= last + 0.002 || p >= 1.0)
+									{
+										last = p;
+										progress?.Report(p);
+									}
+								}
+							}
+						}
+					}
+					catch { }
+				}, token);
+
+				var audioTask = Task.Run(async () =>
+				{
+					token.ThrowIfCancellationRequested();
+					await audioPipe.WaitForConnectionAsync(token).ConfigureAwait(false);
+
+					const int floatsPerChunk = 8192;
+					var byteBuf = ArrayPool<byte>.Shared.Rent(floatsPerChunk * 2);
+
+					try
+					{
+						int i = 0;
+						while (i < sourceAudio.Length)
+						{
+							token.ThrowIfCancellationRequested();
+
+							int count = Math.Min(floatsPerChunk, sourceAudio.Length - i);
+							int bi = 0;
+
+							for (int k = 0; k < count; k++)
+							{
+								float f = sourceAudio[i + k];
+								if (f > 1f)
+								{
+									f = 1f;
+								}
+								else if (f < -1f)
+								{
+									f = -1f;
+								}
+
+								short s = (short) Math.Round(f * 32767f);
+								byteBuf[bi++] = (byte) (s & 0xFF);
+								byteBuf[bi++] = (byte) ((s >> 8) & 0xFF);
+							}
+
+							await audioPipe.WriteAsync(byteBuf.AsMemory(0, bi), token).ConfigureAwait(false);
+							i += count;
+						}
+
+						await audioPipe.FlushAsync(token).ConfigureAwait(false);
+					}
+					finally
+					{
+						ArrayPool<byte>.Shared.Return(byteBuf);
+					}
+				}, token);
+
+				// Frames: lazy von Disk lesen -> zeichnen -> raw BGRA -> ffmpeg stdin
+				await WriteFrameFilesToStdinAsync(proc, frameFiles, width, height, token).ConfigureAwait(false);
+
+				try { proc.StandardInput.Close(); } catch { }
+
+				await proc.WaitForExitAsync(token).ConfigureAwait(false);
+
+				try { await Task.WhenAll(stderrTask, progressTask, audioTask).ConfigureAwait(false); } catch { }
+
+				if (proc.ExitCode != 0)
+				{
+					SafeDelete(resolvedOutputPath);
+					throw new InvalidOperationException($"FFmpeg exit code {proc.ExitCode}. Details:\n{stderrSb}");
+				}
+
+				progress?.Report(1.0);
+				return resolvedOutputPath;
+			}
+			catch (OperationCanceledException)
+			{
+				TryKill(proc);
+				SafeDelete(resolvedOutputPath);
+				throw;
+			}
+			catch
+			{
+				TryKill(proc);
+				SafeDelete(resolvedOutputPath);
+				throw;
+			}
+		}
+
+		private static async Task WriteFrameFilesToStdinAsync(
+			Process proc,
+			string[] frameFiles,
+			int targetW,
+			int targetH,
+			CancellationToken token)
+		{
+			int frameBytes = checked(targetW * targetH * 4);
+			var buffer = ArrayPool<byte>.Shared.Rent(frameBytes);
+
+			try
+			{
+				using var stdin = proc.StandardInput.BaseStream;
+				using var canvas = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
+
+				for (int i = 0; i < frameFiles.Length; i++)
+				{
+					token.ThrowIfCancellationRequested();
+
+					// Load 1 frame, draw, dispose sofort => Peak-RAM flach
+					using var fs = new FileStream(frameFiles[i], FileMode.Open, FileAccess.Read, FileShare.Read);
+					using var tmp = Image.FromStream(fs, useEmbeddedColorManagement: false, validateImageData: false);
+					using var img = (Image) tmp.Clone();
+
+					using (var g = Graphics.FromImage(canvas))
+					{
+						g.Clear(Color.Black);
+						g.DrawImage(img, 0, 0, img.Width, img.Height);
+					}
+
+					CopyBitmap32bppArgbToBgraBuffer(canvas, buffer, frameBytes);
+					await stdin.WriteAsync(buffer.AsMemory(0, frameBytes), token).ConfigureAwait(false);
+				}
+			}
+			finally
+			{
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
+		}
 
 
 
