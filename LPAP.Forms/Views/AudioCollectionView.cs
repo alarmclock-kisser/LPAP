@@ -8,6 +8,7 @@ using Microsoft.VisualBasic;
 using LPAP.Audio;
 using LPAP.Forms.Dialogs;
 using Microsoft.VisualBasic.FileIO;
+using System.IO;
 
 namespace LPAP.Forms.Views
 {
@@ -828,18 +829,61 @@ namespace LPAP.Forms.Views
                 return;
             }
 
-			var exportTasks = new List<Task>();
-            if ((format?.ToLowerInvariant() ?? "").Contains("3"))
+            try
             {
-                exportTasks.AddRange(selected.Select(audio => audio.ExportMp3Async(Path.Combine(SpecialDirectories.MyMusic, "LPAP_Export"), bits.Value)));
-			}
-            else
-            {
-                exportTasks.AddRange(selected.Select(audio => audio.ExportWavAsync(Path.Combine(SpecialDirectories.MyMusic, "LPAP_Export"), bits.Value)));
-			}
+                string baseDir = Path.Combine(SpecialDirectories.MyMusic, "LPAP_Export");
+                bool isMp3 = string.Equals(format, "mp3", StringComparison.OrdinalIgnoreCase);
+                string ext = isMp3 ? "mp3" : "wav";
 
-            await Task.WhenAll(exportTasks);
+                string qualityFolder = isMp3 ? $"{bits.Value}kbps" : $"{bits.Value}bit";
+                string targetDir = Path.Combine(baseDir, isMp3 ? "MP3" : "WAV", qualityFolder);
+                Directory.CreateDirectory(targetDir);
+
+                var exportTasks = new List<Task>();
+                foreach (var audio in selected)
+                {
+                    string safeName = MakeSafeFileName(string.IsNullOrWhiteSpace(audio.Name) ? "audio" : audio.Name);
+                    string path = GetUniqueFilePath(targetDir, safeName, ext);
+
+                    if (isMp3)
+                    {
+                        exportTasks.Add(audio.ExportMp3Async(path, bits.Value));
+                    }
+                    else
+                    {
+                        exportTasks.Add(audio.ExportWavAsync(path, bits.Value));
+                    }
+                }
+
+                await Task.WhenAll(exportTasks);
+            }
+            catch
+            {
+                // optional: logging
+            }
 		}
+
+        private static string MakeSafeFileName(string name)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            var chars = name.Select(c => invalid.Contains(c) ? '_' : c).ToArray();
+            var result = new string(chars).Trim();
+            return string.IsNullOrWhiteSpace(result) ? "audio" : result;
+        }
+
+        private static string GetUniqueFilePath(string directory, string fileNameWithoutExt, string extension)
+        {
+            string path = Path.Combine(directory, $"{fileNameWithoutExt}.{extension}");
+            if (!File.Exists(path)) return path;
+
+            int i = 1;
+            while (true)
+            {
+                string candidate = Path.Combine(directory, $"{fileNameWithoutExt} ({i}).{extension}");
+                if (!File.Exists(candidate)) return candidate;
+                i++;
+            }
+        }
 	}
 
 
@@ -847,6 +891,8 @@ namespace LPAP.Forms.Views
 
 
 
+namespace LPAP.Forms.Views
+{
     internal class AudioListBox : ListBox
     {
         protected override void OnMouseDown(MouseEventArgs e)
@@ -876,4 +922,5 @@ namespace LPAP.Forms.Views
             base.OnMouseDown(e);
         }
     }
+}
 

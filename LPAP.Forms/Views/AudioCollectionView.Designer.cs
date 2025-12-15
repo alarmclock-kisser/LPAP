@@ -39,6 +39,19 @@
             this.toolStripMenuItem1 = new ToolStripMenuItem();
             this.wAVToolStripMenuItem = new ToolStripMenuItem();
             this.mP3ToolStripMenuItem = new ToolStripMenuItem();
+            this.wav32ToolStripMenuItem = new ToolStripMenuItem();
+            this.wav24ToolStripMenuItem = new ToolStripMenuItem();
+            this.wav16ToolStripMenuItem = new ToolStripMenuItem();
+            this.wav8ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp3320ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp3256ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp3224ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp3192ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp3160ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp3128ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp396ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp364ToolStripMenuItem = new ToolStripMenuItem();
+            this.mp332ToolStripMenuItem = new ToolStripMenuItem();
             this.contextMenuStrip_listBox.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -101,15 +114,121 @@
             // 
             // wAVToolStripMenuItem
             // 
+            this.wAVToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.wav32ToolStripMenuItem, this.wav24ToolStripMenuItem, this.wav16ToolStripMenuItem, this.wav8ToolStripMenuItem });
             this.wAVToolStripMenuItem.Name = "wAVToolStripMenuItem";
             this.wAVToolStripMenuItem.Size = new Size(180, 22);
             this.wAVToolStripMenuItem.Text = "WAV";
             // 
             // mP3ToolStripMenuItem
             // 
+            this.mP3ToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.mp3320ToolStripMenuItem, this.mp3256ToolStripMenuItem, this.mp3224ToolStripMenuItem, this.mp3192ToolStripMenuItem, this.mp3160ToolStripMenuItem, this.mp3128ToolStripMenuItem, this.mp396ToolStripMenuItem, this.mp364ToolStripMenuItem, this.mp332ToolStripMenuItem });
             this.mP3ToolStripMenuItem.Name = "mP3ToolStripMenuItem";
             this.mP3ToolStripMenuItem.Size = new Size(180, 22);
             this.mP3ToolStripMenuItem.Text = "MP3";
+            // 
+            // wav32ToolStripMenuItem
+            // 
+            this.wav32ToolStripMenuItem.Name = "wav_32";
+            this.wav32ToolStripMenuItem.Size = new Size(180, 22);
+            this.wav32ToolStripMenuItem.Tag = "wav";
+            this.wav32ToolStripMenuItem.Text = "32 bit";
+            this.wav32ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // wav24ToolStripMenuItem
+            // 
+            this.wav24ToolStripMenuItem.Name = "wav_24";
+            this.wav24ToolStripMenuItem.Size = new Size(180, 22);
+            this.wav24ToolStripMenuItem.Tag = "wav";
+            this.wav24ToolStripMenuItem.Text = "24 bit";
+            this.wav24ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // wav16ToolStripMenuItem
+            // 
+            this.wav16ToolStripMenuItem.Name = "wav_16";
+            this.wav16ToolStripMenuItem.Size = new Size(180, 22);
+            this.wav16ToolStripMenuItem.Tag = "wav";
+            this.wav16ToolStripMenuItem.Text = "16 bit";
+            this.wav16ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // wav8ToolStripMenuItem
+            // 
+            this.wav8ToolStripMenuItem.Name = "wav_8";
+            this.wav8ToolStripMenuItem.Size = new Size(180, 22);
+            this.wav8ToolStripMenuItem.Tag = "wav";
+            this.wav8ToolStripMenuItem.Text = "8 bit";
+            this.wav8ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp3320ToolStripMenuItem
+            // 
+            this.mp3320ToolStripMenuItem.Name = "mp3_320";
+            this.mp3320ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp3320ToolStripMenuItem.Tag = "mp3";
+            this.mp3320ToolStripMenuItem.Text = "320 kbps";
+            this.mp3320ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp3256ToolStripMenuItem
+            // 
+            this.mp3256ToolStripMenuItem.Name = "mp3_256";
+            this.mp3256ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp3256ToolStripMenuItem.Tag = "mp3";
+            this.mp3256ToolStripMenuItem.Text = "256 kbps";
+            this.mp3256ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp3224ToolStripMenuItem
+            // 
+            this.mp3224ToolStripMenuItem.Name = "mp3_224";
+            this.mp3224ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp3224ToolStripMenuItem.Tag = "mp3";
+            this.mp3224ToolStripMenuItem.Text = "224 kbps";
+            this.mp3224ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp3192ToolStripMenuItem
+            // 
+            this.mp3192ToolStripMenuItem.Name = "mp3_192";
+            this.mp3192ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp3192ToolStripMenuItem.Tag = "mp3";
+            this.mp3192ToolStripMenuItem.Text = "192 kbps";
+            this.mp3192ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp3160ToolStripMenuItem
+            // 
+            this.mp3160ToolStripMenuItem.Name = "mp3_160";
+            this.mp3160ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp3160ToolStripMenuItem.Tag = "mp3";
+            this.mp3160ToolStripMenuItem.Text = "160 kbps";
+            this.mp3160ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp3128ToolStripMenuItem
+            // 
+            this.mp3128ToolStripMenuItem.Name = "mp3_128";
+            this.mp3128ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp3128ToolStripMenuItem.Tag = "mp3";
+            this.mp3128ToolStripMenuItem.Text = "128 kbps";
+            this.mp3128ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp396ToolStripMenuItem
+            // 
+            this.mp396ToolStripMenuItem.Name = "mp3_96";
+            this.mp396ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp396ToolStripMenuItem.Tag = "mp3";
+            this.mp396ToolStripMenuItem.Text = "96 kbps";
+            this.mp396ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp364ToolStripMenuItem
+            // 
+            this.mp364ToolStripMenuItem.Name = "mp3_64";
+            this.mp364ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp364ToolStripMenuItem.Tag = "mp3";
+            this.mp364ToolStripMenuItem.Text = "64 kbps";
+            this.mp364ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
+            // 
+            // mp332ToolStripMenuItem
+            // 
+            this.mp332ToolStripMenuItem.Name = "mp3_32";
+            this.mp332ToolStripMenuItem.Size = new Size(180, 22);
+            this.mp332ToolStripMenuItem.Tag = "mp3";
+            this.mp332ToolStripMenuItem.Text = "32 kbps";
+            this.mp332ToolStripMenuItem.Click += this.exportToolStripMenuItem_Click;
             // 
             // AudioCollectionView
             // 
@@ -136,5 +255,18 @@
         private ToolStripMenuItem toolStripMenuItem1;
         private ToolStripMenuItem wAVToolStripMenuItem;
         private ToolStripMenuItem mP3ToolStripMenuItem;
+        private ToolStripMenuItem wav32ToolStripMenuItem;
+        private ToolStripMenuItem wav24ToolStripMenuItem;
+        private ToolStripMenuItem wav16ToolStripMenuItem;
+        private ToolStripMenuItem wav8ToolStripMenuItem;
+        private ToolStripMenuItem mp3320ToolStripMenuItem;
+        private ToolStripMenuItem mp3256ToolStripMenuItem;
+        private ToolStripMenuItem mp3224ToolStripMenuItem;
+        private ToolStripMenuItem mp3192ToolStripMenuItem;
+        private ToolStripMenuItem mp3160ToolStripMenuItem;
+        private ToolStripMenuItem mp3128ToolStripMenuItem;
+        private ToolStripMenuItem mp396ToolStripMenuItem;
+        private ToolStripMenuItem mp364ToolStripMenuItem;
+        private ToolStripMenuItem mp332ToolStripMenuItem;
     }
 }
