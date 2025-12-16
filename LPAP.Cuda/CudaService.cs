@@ -14,7 +14,7 @@ namespace LPAP.Cuda
     {
         private readonly Lock _initLock = new();
 
-        public string KernelsPath { get; internal set; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kernels");
+        public string KernelsPath { get; internal set; } = "";
         public int DeviceIndex { get; private set; } = -1;
         public Dictionary<CUdevice, string> AvailableDevices { get; private set; } = [];
 
@@ -32,7 +32,9 @@ namespace LPAP.Cuda
         public CudaService(string deviceName = "RTX")
         {
             CudaLog.Info("Initializing CudaService...");
-            this.KernelsPath = this.PrepareKernelDirectory(this.KernelsPath);
+            this.KernelsPath = ResolveRepoKernelsPathOrFallback();
+            this.KernelsPath = this.PrepareKernelDirectory(this.KernelsPath); // ensures CU/PTX/Logs exist
+            CudaLog.Info("Using KernelsPath", this.KernelsPath);
             this.ConfigureLogging();
             this.AvailableDevices = this.GetAvailableDevices();
 
@@ -304,6 +306,41 @@ namespace LPAP.Cuda
             return this.Register.Memory.Select(m => m.IndexPointer);
         }
 
+        private static string ResolveRepoKernelsPathOrFallback()
+        {
+            try
+            {
+                // 1) Preferred: 4x up from exe folder -> LPAP.Cuda\Kernels
+                string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                var di = new DirectoryInfo(exeDir);
+
+                for (int i = 0; i < 4 && di.Parent != null; i++)
+                    di = di.Parent;
+
+                string candidate = Path.Combine(di.FullName, "LPAP.Cuda", "Kernels");
+                if (Directory.Exists(candidate))
+                    return Path.GetFullPath(candidate);
+
+                // 2) Walk upwards and search for "LPAP.Cuda\Kernels"
+                di = new DirectoryInfo(exeDir);
+                while (di != null)
+                {
+                    candidate = Path.Combine(di.FullName, "LPAP.Cuda", "Kernels");
+                    if (Directory.Exists(candidate))
+                        return Path.GetFullPath(candidate);
+
+                    di = di.Parent;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            // 3) Fallback (old behavior)
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kernels");
+        }
+
         public IEnumerable<string?> GetKernels(string? filter = null, bool showUncompiled = false, bool filePaths = false)
         {
             if (this.Compiler == null)
@@ -345,7 +382,6 @@ namespace LPAP.Cuda
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
-
 
         public Dictionary<string, Type>? GetKernelArguments(string? kernelName)
         {
@@ -448,6 +484,11 @@ namespace LPAP.Cuda
                 return info;
             }
         }
+
+
+
+
+
 
         public async Task ExecuteAudioKernelInPlaceAsync(
             AudioObj audio,
