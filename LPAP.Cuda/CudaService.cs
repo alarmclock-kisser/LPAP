@@ -349,8 +349,8 @@ namespace LPAP.Cuda
             }
 
             List<string> files = showUncompiled
-                ? this.Compiler.GetCuFiles(this.KernelsPath)
-                : this.Compiler.GetPtxFiles(this.KernelsPath);
+                ? this.Compiler.GetCuFiles()
+                : this.Compiler.GetPtxFiles();
 
             if (files.Count == 0)
             {
@@ -485,12 +485,65 @@ namespace LPAP.Cuda
             }
         }
 
+        public string GetKernelExecutionType(string kernelName)
+        {
+			// In-Place, Out-of-Place, GetValue, GetData
+			if (string.IsNullOrWhiteSpace(kernelName) || this.Compiler == null)
+			{
+				return "Unknown";
+			}
+
+			try
+			{
+				var args = this.Compiler.GetArguments(kernelName);
+				if (args == null || args.Count == 0)
+				{
+					return "Unknown";
+				}
+
+				int ptrCount = args.Values.Count(t => t.IsPointer);
+				if (ptrCount <= 0)
+				{
+					return "Unknown";
+				}
+
+				if (ptrCount == 1)
+				{
+					return "In-Place";
+				}
+
+                // Heuristics: If there are more than 2 pointers, assume OutBuffer variant
+                if (ptrCount > 2)
+                {
+                    // Prefer GetData when more than 2 pointers
+                    return "GetData";
+                }
+
+                // If pointer base types differ, it's likely an OutBuffer (GetData/Value)
+                var pointerBaseTypes = args.Values.Where(t => t.IsPointer).Select(t => t.GetElementType()).Distinct().ToList();
+                if (pointerBaseTypes.Count > 1)
+                {
+                    // Try to distinguish value vs data via name hints
+                    string name = kernelName.ToLowerInvariant();
+                    if (name.Contains("value") || name.Contains("scalar") || name.Contains("stat"))
+                    {
+                        return "GetValue";
+                    }
+                    return "GetData";
+                }
+
+                return "Out-of-Place";
+			}
+			catch
+			{
+				return "Unknown";
+			}
+		}
 
 
 
 
-
-        public async Task ExecuteAudioKernelInPlaceAsync(
+		public async Task ExecuteAudioKernelInPlaceAsync(
             AudioObj audio,
             string kernelName,
             int chunkSize,
@@ -680,7 +733,7 @@ namespace LPAP.Cuda
             var userArgsString = ToStringArgDict(arguments);
 
             // figure out pointer-arg count
-            int ptrCount = argDefs.Values.Count(t => t == typeof(CUdeviceptr));
+            int ptrCount = argDefs.Values.Count(t => t.IsPointer);
             if (ptrCount <= 0)
             {
                 CudaLog.Warn("Kernel has no pointer args; not an audio kernel?", kernelName);

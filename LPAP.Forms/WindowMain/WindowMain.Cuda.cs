@@ -154,7 +154,7 @@ namespace LPAP.Forms
             this.panel_cudaKernelArguments.SuspendLayout();
             try
             {
-                this.KernelArgumentControls?.Clear();
+                this.KernelArgumentControls = [];
                 this.panel_cudaKernelArguments.Controls.Clear();
 
                 if (!this.Cuda.Initialized || string.IsNullOrWhiteSpace(this.SelectedKernelName))
@@ -184,7 +184,7 @@ namespace LPAP.Forms
                     Control input;
 
                     // Device pointers: show disabled field (informational only)
-                    if (argType == typeof(ManagedCuda.BasicTypes.CUdeviceptr) || argType.Name.Contains("CUdeviceptr", StringComparison.OrdinalIgnoreCase))
+                    if (argType.IsPointer)
                     {
                         var tb = new TextBox
                         {
@@ -213,8 +213,9 @@ namespace LPAP.Forms
                         {
                             Location = new Point(170, yOffset - 2),
                             Size = new Size(120, 23),
-                            DecimalPlaces = (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal)) ? 4 : 0,
-                            Minimum = -1000000,
+                            DecimalPlaces = (argType == typeof(double) || argType == typeof(decimal)) ? 12 : argType == typeof(float) ? 6 : 0,
+
+							Minimum = -1000000,
                             Maximum = 1000000,
                             Increment = (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal)) ? 0.1m : 1m,
                             Value = 0
@@ -228,10 +229,27 @@ namespace LPAP.Forms
                     this.panel_cudaKernelArguments.Controls.Add(lbl);
                     this.panel_cudaKernelArguments.Controls.Add(input);
 
-                    this.KernelArgumentControls?[argName] = (NumericUpDown) input;
+                    this.KernelArgumentControls[argName] = input;
 
                     yOffset += 28;
                 }
+
+                if (yOffset > this.panel_cudaKernelArguments.Height)
+                {
+                    this.panel_cudaKernelArguments.VerticalScroll.Enabled = true;
+					foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<NumericUpDown>())
+					{
+                        item.Width -= 17;
+					}
+					foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<TextBox>())
+					{
+						item.Width -= 17;
+					}
+					foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<CheckBox>())
+					{
+						item.Width -= 17;
+					}
+				}
 
                 return Task.CompletedTask;
             }
@@ -365,7 +383,8 @@ namespace LPAP.Forms
 
                 // Build UI for args (on UI thread)
                 await this.BuildCudaKernelArgsAsync().ConfigureAwait(true);
-            }
+                this.label_kernelType.Text = "Kernel Type: " + this.Cuda.GetKernelExecutionType(this.SelectedKernelName);
+			}
             catch (Exception ex)
             {
                 CudaLog.Error(ex, "Failed to rebuild CUDA kernel argument UI.");
@@ -444,7 +463,7 @@ namespace LPAP.Forms
                         var (_, argType) = meta;
 
                         // ignore pointer args in UI (CudaService auto-wires audio buffers)
-                        if (argType == typeof(ManagedCuda.BasicTypes.CUdeviceptr) || argType.Name.Contains("CUdeviceptr", StringComparison.OrdinalIgnoreCase))
+                        if (argType.IsPointer)
                         {
                             continue;
                         }

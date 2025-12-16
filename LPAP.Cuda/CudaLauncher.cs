@@ -321,7 +321,7 @@ internal sealed class CudaLauncher : IDisposable
             string name = args.ElementAt(i).Key.ToLowerInvariant();
             Type type = args.ElementAt(i).Value;
 
-            if (type == typeof(CUdeviceptr))
+            if (type.IsPointer)
             {
                 sorted[i] = mem.DevicePointers.FirstOrDefault();
             }
@@ -366,7 +366,7 @@ internal sealed class CudaLauncher : IDisposable
         for (int i = 0; i < argDefs.Count; i++)
         {
             var (name, type) = argDefs.ElementAt(i);
-            if (type == typeof(CUdeviceptr))
+            if (type.IsPointer)
             {
                 merged[i] = pointerCount switch
                 {

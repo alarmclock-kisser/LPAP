@@ -346,25 +346,98 @@ internal sealed class CudaCompiler : IDisposable
             cleaned = cleaned.TrimEnd('*').Trim();
         }
 
-        Type baseType = cleaned switch
-        {
-            "int" => typeof(int),
-            "long" => typeof(long),
-            "float" => typeof(float),
-            "double" => typeof(double),
-            "char" => typeof(char),
-            "bool" => typeof(bool),
-            "byte" => typeof(byte),
-            "float2" => typeof(float2),
-            _ => typeof(void)
-        };
+        // Normalize spaces and casing for easier matching
+        string norm = Regex.Replace(cleaned, "\\s+", " ").Trim().ToLowerInvariant();
 
-        if (isPointer)
+        // Flags for composite C types
+        bool isUnsigned = norm.Contains("unsigned ");
+        bool isSigned = norm.Contains("signed ");
+        bool isLongLong = norm.Contains("long long");
+        bool isLong = !isLongLong && norm.Contains("long");
+        bool isShort = norm.Contains("short");
+
+        // Common aliases
+        if (norm is "uint" or "unsigned int")
         {
-            return typeof(CUdeviceptr);
+            return isPointer ? typeof(uint).MakePointerType() : typeof(uint);
+        }
+        if (norm is "int" or "signed int")
+        {
+            return isPointer ? typeof(int).MakePointerType() : typeof(int);
+        }
+        if (norm is "float")
+        {
+            return isPointer ? typeof(float).MakePointerType() : typeof(float);
+        }
+        if (norm is "double")
+        {
+            return isPointer ? typeof(double).MakePointerType() : typeof(double);
+        }
+        if (norm is "bool")
+        {
+            return isPointer ? typeof(bool).MakePointerType() : typeof(bool);
+        }
+        if (norm is "byte")
+        {
+            return isPointer ? typeof(byte).MakePointerType() : typeof(byte);
+        }
+        if (norm is "float2")
+        {
+            return isPointer ? typeof(float2).MakePointerType() : typeof(float2);
         }
 
-        return baseType;
+        // char family
+        if (norm.Contains("char"))
+        {
+            // unsigned char -> byte, signed char -> sbyte, plain char keep existing behavior
+            if (isUnsigned || norm.StartsWith("uchar"))
+            {
+                return isPointer ? typeof(byte).MakePointerType() : typeof(byte);
+            }
+            if (isSigned)
+            {
+                return isPointer ? typeof(sbyte).MakePointerType() : typeof(sbyte);
+            }
+            // default 'char' (C) maps best-effort to sbyte; keep .NET char only if you explicitly want UTF-16
+            return isPointer ? typeof(sbyte).MakePointerType() : typeof(sbyte);
+        }
+
+        // short family
+        if (isShort)
+        {
+            var t = isUnsigned ? typeof(ushort) : typeof(short);
+            return isPointer ? t.MakePointerType() : t;
+        }
+
+        // long long (64-bit)
+        if (isLongLong)
+        {
+            var t = isUnsigned ? typeof(ulong) : typeof(long);
+            return isPointer ? t.MakePointerType() : t;
+        }
+
+        // long (platform dependent). CUDA typically treats 'long' as 32-bit on Windows; keep previous behavior if you rely on 64-bit.
+        if (isLong)
+        {
+            var t = isUnsigned ? typeof(ulong) : typeof(long);
+            return isPointer ? t.MakePointerType() : t;
+        }
+
+        // size_t / ssize_t / ptrdiff_t (best-effort)
+        if (norm is "size_t")
+        {
+            var t = typeof(ulong);
+            return isPointer ? t.MakePointerType() : t;
+        }
+        if (norm is "ssize_t" or "ptrdiff_t")
+        {
+            var t = typeof(long);
+            return isPointer ? t.MakePointerType() : t;
+        }
+
+        // Fallback to int for unknown scalars, void for unknown pointers
+        var fallback = typeof(void);
+        return isPointer ? fallback.MakePointerType() : fallback;
     }
 
     private static void WriteCompilationLog(CudaRuntimeCompiler rtc, string logPath, bool silent)
