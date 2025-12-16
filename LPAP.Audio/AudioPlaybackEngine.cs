@@ -8,35 +8,49 @@ namespace LPAP.Audio
 {
 	internal sealed class AudioPlaybackEngine : IDisposable
 	{
-		private sealed class TrackHandle
-		{
-			public LoopingRegionSampleProvider Looping { get; }
-			public VolumeSampleProvider VolumeProvider { get; }
-			public PositionTrackingSampleProvider Tracking { get; }
-			public PausableSampleProvider Pausable { get; }
+        private sealed class TrackHandle
+        {
+            public LoopingRegionSampleProvider Looping { get; }
+            public VolumeSampleProvider VolumeProvider { get; }
+            public PositionTrackingSampleProvider Tracking { get; }
+            public PausableSampleProvider Pausable { get; }
 
-			public TrackHandle(
-				LoopingRegionSampleProvider looping,
-				VolumeSampleProvider volumeProvider,
-				PositionTrackingSampleProvider tracking,
-				PausableSampleProvider pausable)
-			{
-				this.Looping = looping;
-				this.VolumeProvider = volumeProvider;
-				this.Tracking = tracking;
-				this.Pausable = pausable;
-			}
-		}
+            // This is the provider right after pause (pre channel-conv + resample)
+            public ISampleProvider BaseProvider { get; }
 
-		private static readonly Lazy<AudioPlaybackEngine> _instance =
+            // This one gets added to the mixer and can be swapped when output format changes
+            public ISampleProvider MixerInput { get; set; }
+
+            public TrackHandle(
+                LoopingRegionSampleProvider looping,
+                VolumeSampleProvider volumeProvider,
+                PositionTrackingSampleProvider tracking,
+                PausableSampleProvider pausable,
+                ISampleProvider baseProvider,
+                ISampleProvider mixerInput)
+            {
+                this.Looping = looping;
+                this.VolumeProvider = volumeProvider;
+                this.Tracking = tracking;
+                this.Pausable = pausable;
+                this.BaseProvider = baseProvider;
+                this.MixerInput = mixerInput;
+            }
+        }
+
+
+        private static readonly Lazy<AudioPlaybackEngine> _instance =
 			new(() => new AudioPlaybackEngine());
 
 		public static AudioPlaybackEngine Instance => _instance.Value;
 
-		private readonly WaveOutEvent _outputDevice;
-		private readonly MixingSampleProvider _mixer;
+        private WaveOutEvent _outputDevice;
+        private MixingSampleProvider _mixer;
 
-		private readonly ConcurrentDictionary<Guid, TrackHandle> _tracks = new();
+        private readonly object _engineLock = new();
+
+
+        private readonly ConcurrentDictionary<Guid, TrackHandle> _tracks = new();
 
 		private AudioPlaybackEngine(int sampleRate = 48000, int channels = 2)
 		{
@@ -85,29 +99,19 @@ namespace LPAP.Audio
 			// 3) Positiontracking (vor Resampling, damit SamplesRead auf Originalrate basiert)
 			var tracking = new PositionTrackingSampleProvider(volumeProvider);
 
-			// 4) Pausieren
-			var pausable = new PausableSampleProvider(tracking);
-			ISampleProvider pipeline = pausable;
+            // 4) Pausieren
+            var pausable = new PausableSampleProvider(tracking);
 
-			// 5) Channel-Anpassung auf Mixer-Format
-			if (pipeline.WaveFormat.Channels == 1 && this._mixer.WaveFormat.Channels == 2)
-			{
-				pipeline = new MonoToStereoSampleProvider(pipeline);
-			}
-			else if (pipeline.WaveFormat.Channels == 2 && this._mixer.WaveFormat.Channels == 1)
-			{
-				pipeline = new StereoToMonoSampleProvider(pipeline);
-			}
+            // base provider is the graph up to pause (kept stable across output rebuild)
+            ISampleProvider baseProvider = pausable;
 
-			// 6) Resampling auf Mixer-Rate, damit kein Pitch-/Tempo-Shift
-			if (pipeline.WaveFormat.SampleRate != this._mixer.WaveFormat.SampleRate)
-			{
-				pipeline = new WdlResamplingSampleProvider(pipeline, this._mixer.WaveFormat.SampleRate);
-			}
+            // tail provider depends on mixer format (can be rebuilt)
+            ISampleProvider pipeline = this.BuildMixerInputForCurrentOutput(baseProvider);
 
-			var handle = new TrackHandle(looping, volumeProvider, tracking, pausable);
+            var handle = new TrackHandle(looping, volumeProvider, tracking, pausable, baseProvider, pipeline);
 
-			if (this._tracks.TryAdd(audio.Id, handle))
+
+            if (this._tracks.TryAdd(audio.Id, handle))
 			{
 				if (startSample > 0)
 				{
@@ -125,7 +129,7 @@ namespace LPAP.Audio
 		{
 			if (this._tracks.TryRemove(audio.Id, out var handle))
 			{
-				this._mixer.RemoveMixerInput(handle.Pausable);
+				this._mixer.RemoveMixerInput(handle.MixerInput);
 				audio.DetachPlaybackTracking(handle.Tracking);
 				audio.SetPlaybackState(PlaybackState.Stopped);
 			}
@@ -187,7 +191,71 @@ namespace LPAP.Audio
 			}
 		}
 
-		public void Dispose()
+        public void SetOutputSampleRate(int newSampleRate)
+        {
+            newSampleRate = Math.Clamp(newSampleRate, 8000, 192000);
+
+            lock (this._engineLock)
+            {
+                if (this._mixer.WaveFormat.SampleRate == newSampleRate)
+                    return;
+
+                // Snapshot active tracks
+                var active = this._tracks.Values.ToList();
+
+                // Remove old mixer inputs first (safe)
+                foreach (var h in active)
+                {
+                    try { this._mixer.RemoveMixerInput(h.MixerInput); } catch { }
+                }
+
+                // Rebuild mixer + output device
+                int channels = this._mixer.WaveFormat.Channels;
+                var newFormat = WaveFormat.CreateIeeeFloatWaveFormat(newSampleRate, channels);
+
+                try { this._outputDevice?.Stop(); } catch { }
+                try { this._outputDevice?.Dispose(); } catch { }
+
+                this._mixer = new MixingSampleProvider(newFormat) { ReadFully = true };
+
+                this._outputDevice = new WaveOutEvent { DesiredLatency = 80 };
+                this._outputDevice.Init(this._mixer);
+                this._outputDevice.Play();
+
+                // Rebuild each track tail (channel conv + resampler) to match new mixer format
+                foreach (var h in active)
+                {
+                    try
+                    {
+                        var newInput = this.BuildMixerInputForCurrentOutput(h.BaseProvider);
+                        h.MixerInput = newInput;
+                        this._mixer.AddMixerInput(newInput);
+                    }
+                    catch { }
+                }
+            }
+        }
+
+
+        private ISampleProvider BuildMixerInputForCurrentOutput(ISampleProvider baseProvider)
+        {
+            ISampleProvider pipeline = baseProvider;
+
+            // Channel adaptation to current mixer format
+            if (pipeline.WaveFormat.Channels == 1 && this._mixer.WaveFormat.Channels == 2)
+                pipeline = new MonoToStereoSampleProvider(pipeline);
+            else if (pipeline.WaveFormat.Channels == 2 && this._mixer.WaveFormat.Channels == 1)
+                pipeline = new StereoToMonoSampleProvider(pipeline);
+
+            // Resample to current mixer rate
+            if (pipeline.WaveFormat.SampleRate != this._mixer.WaveFormat.SampleRate)
+                pipeline = new WdlResamplingSampleProvider(pipeline, this._mixer.WaveFormat.SampleRate);
+
+            return pipeline;
+        }
+
+
+        public void Dispose()
 		{
 			this._outputDevice?.Stop();
 			this._outputDevice?.Dispose();
@@ -479,6 +547,8 @@ namespace LPAP.Audio
 				}
 			}
 		}
+
+
 	}
 
 }

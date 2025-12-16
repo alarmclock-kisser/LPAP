@@ -28,9 +28,10 @@ namespace LPAP.Forms
 		// default delay used before initialization
 		private int _statsUpdateDelayMs = 250;
 		private bool _statsEnabled = true;
+        private CancellationTokenSource? _statsCts;
 
-		// Expose toggles for timer enable and update delay
-		[Browsable(false)]
+        // Expose toggles for timer enable and update delay
+        [Browsable(false)]
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool StatisticsEnabled
 		{
@@ -98,17 +99,59 @@ namespace LPAP.Forms
 			return timer;
 		}
 
+        private void StopStatisticsWorker()
+        {
+            try { this._statsCts?.Cancel(); } catch { }
+            this._statsCts?.Dispose();
+            this._statsCts = null;
+            Interlocked.Exchange(ref this._statsRunning, 0);
+        }
+
+        private void EnsureStatisticsWorker()
+        {
+            this._statsCts ??= new CancellationTokenSource();
+            this.InitializeStatisticsTimer();
+            if (this._statsEnabled)
+            {
+                this._statisticsTimer!.Start();
+            }
+        }
+
+        private void checkBox_enableMonitoring_CheckedChanged(object sender, EventArgs e)
+        {
+            bool enabled = this.checkBox_enableMonitoring.Checked;
+            this.StatisticsEnabled = enabled;
+            this.numericUpDown_statisticsUpdateDelay.Enabled = enabled;
+
+            if (enabled)
+            {
+                this.EnsureStatisticsWorker();
+                this.StatisticsUpdateDelayMs = (int)this.numericUpDown_statisticsUpdateDelay.Value;
+            }
+            else
+            {
+                this.StopStatisticsWorker();
+                this.pictureBox_cores.Image = null;
+                this.progressBar_memory.Value = 0;
+                this.label_memory.Text = "Memory: N/A";
+            }
+        }
+
         private void StatisticsTimer_Tick(object? sender, EventArgs e)
         {
-            if (Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
+            if (!this._statsEnabled || Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
             {
                 return;
             }
+
+            var token = this._statsCts?.Token ?? CancellationToken.None;
 
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    token.ThrowIfCancellationRequested();
+
                     long totalBytes = StatisticsExtensions.GetTotalMemoryBytes();
                     long usedBytes = StatisticsExtensions.GetUsedMemoryBytes();
                     this.MaxMemoryKb = totalBytes / 1024.0;
@@ -116,7 +159,7 @@ namespace LPAP.Forms
 
                     this.UpdateMemoryUiSafe();
 
-                    var usages = await StatisticsExtensions.GetThreadUsagesAsync().ConfigureAwait(false);
+                    var usages = await StatisticsExtensions.GetThreadUsagesAsync(token).ConfigureAwait(false);
                     this.CoreUsages = usages;
 
                     if (this.pictureBox_cores.Width > 0 && this.pictureBox_cores.Height > 0)
@@ -126,40 +169,33 @@ namespace LPAP.Forms
                             this.pictureBox_cores.Width,
                             this.pictureBox_cores.Height,
                             this.pictureBox_cores.BackColor,
-                            CancellationToken.None).ConfigureAwait(false);
+                            token).ConfigureAwait(false);
 
-                        if (this.IsDisposed || !this.IsHandleCreated)
+                        if (!this.IsDisposed && this.IsHandleCreated)
                         {
-                            return;
+                            this.BeginInvoke(new Action(() =>
+                            {
+                                var old = this.pictureBox_cores.Image;
+                                this.pictureBox_cores.Image = bmp;
+                                old?.Dispose();
+                            }));
                         }
-
-                        this.BeginInvoke(new Action(() =>
-                        {
-                            var old = this.pictureBox_cores.Image;
-                            this.pictureBox_cores.Image = bmp;
-                            old?.Dispose();
-                        }));
                     }
+
+                    await this.UpdateCudaStatistics().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
                 }
                 catch (Exception ex)
                 {
-                    // NICHT komplett schlucken: zumindest loggen
                     CudaLog.Error(ex, "StatisticsTimer_Tick worker failed", "Stats");
                 }
                 finally
                 {
-                    try
-                    {
-                        await this.UpdateCudaStatistics().ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        CudaLog.Error(ex, "UpdateCudaStatistics failed", "Stats");
-                    }
-
                     Interlocked.Exchange(ref this._statsRunning, 0);
                 }
-            });
+            }, token);
         }
 
 
@@ -245,7 +281,7 @@ namespace LPAP.Forms
 						g.DrawRectangle(borderPen, rect);
 
 						// Fill proportionally from bottom based on usage
-						float u = usages[i];
+						float u = usages?[i] ?? 0;
 						if (u < 0f)
 						{
 							u = 0f;
@@ -310,9 +346,18 @@ namespace LPAP.Forms
 			{
 				var now = DateTime.UtcNow;
 				var elapsed = now - _lastSampleUtc;
-				if (elapsed < _samplingInterval && _lastUsages.Length == _cpuCounters.Length)
+
+				if (elapsed > _samplingInterval * 4)
 				{
-					return Task.FromResult((float[]) _lastUsages.Clone());
+					for (int i = 0; i < _cpuCounters.Length; i++)
+					{
+						_ = _cpuCounters[i].NextValue();
+					}
+					Thread.Sleep(_samplingInterval);
+				}
+				else if (elapsed < _samplingInterval && _lastUsages.Length == _cpuCounters.Length)
+				{
+					return Task.FromResult((float[])_lastUsages.Clone());
 				}
 
 				int coreCount = _cpuCounters.Length;
@@ -320,23 +365,25 @@ namespace LPAP.Forms
 
 				for (int i = 0; i < coreCount; i++)
 				{
-					float percent = _cpuCounters[i].NextValue(); // 0..100
+					cancellationToken.ThrowIfCancellationRequested();
+
+					float percent = _cpuCounters[i].NextValue();
 					if (percent < 0f)
-					{
-						percent = 0f;
-					}
+                    {
+                        percent = 0f;
+                    }
 
-					if (percent > 100f)
-					{
-						percent = 100f;
-					}
+                    if (percent > 100f)
+                    {
+                        percent = 100f;
+                    }
 
-					usages[i] = percent / 100f;
+                    usages[i] = percent / 100f;
 				}
 
 				_lastUsages = usages;
 				_lastSampleUtc = now;
-				return Task.FromResult((float[]) usages.Clone());
+				return Task.FromResult((float[])usages.Clone());
 			}
 		}
 

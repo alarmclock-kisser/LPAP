@@ -97,12 +97,12 @@ namespace LPAP.Forms.Views
 
             template.Visible = false;
 
-            string[] buttonLabels = { "16", "8", "4", "2", "1", "/2", "/4", "/8", "/8", "/4", "/2", "1", "2", "4", "8", "16" };
+            string[] buttonLabels = ["16", "8", "4", "2", "1", "/2", "/4", "/8", "/8", "/4", "/2", "1", "2", "4", "8", "16"];
             float[] fractions =
-            {
+            [
                 -8f, -4f, -2f, -1f, -0.5f, -0.25f, -0.125f, -0.0625f,
                  0.0625f, 0.125f, 0.25f, 0.5f, 1f, 2f, 4f, 8f
-            };
+            ];
 
             const int buttonCount = 16;
 

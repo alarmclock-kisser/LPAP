@@ -3,6 +3,8 @@ using LPAP.Cuda;
 using LPAP.Forms.Dialogs;
 using LPAP.Forms.Views;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.Runtime.CompilerServices;
 using Timer = System.Windows.Forms.Timer;
 
@@ -11,6 +13,7 @@ namespace LPAP.Forms
     public partial class WindowMain : Form
     {
         internal static WindowMain? Instance { get; private set; }
+        internal static string ExportDirectory { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
 
         internal static TrackView? LastSelectedTrackView
         {
@@ -50,6 +53,11 @@ namespace LPAP.Forms
             this.ComboBox_FillCudaDevices();
             this.ListBox_Bind_CudaLog();
 
+            // Set export directory
+            ExportDirectory = NvencVideoRenderer.ReadExportPath_From_LocalStats(true) ?? ExportDirectory;
+            this.label_exportDirectory.Text = "Dir: " + ShortenPathForDisplay(ExportDirectory, 2, 1);
+            NvencVideoRenderer.WriteExportPath_To_LocalStats(ExportDirectory);
+
             // initialize statistics monitoring and assign mandatory attribute
             this._statisticsTimer = this.InitializeStatisticsTimer();
             this.StatisticsUpdateDelayMs = (int) this.numericUpDown_statisticsUpdateDelay.Value;
@@ -74,6 +82,21 @@ namespace LPAP.Forms
 
             // Button info
             toolTip.SetToolTip(this.button_cudaInfo, $" ~ Hardware Info ~ \n\n - Click for CUDA info\n\n - Ctrl-Click for system info");
+        }
+
+        internal static string ShortenPathForDisplay(string fullPath, int firstDirectiries = 2, int lastDirectories = 1)
+        {
+            firstDirectiries = Math.Max(1, firstDirectiries);
+            lastDirectories = Math.Max(1, lastDirectories);
+            var parts = fullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (parts.Length <= firstDirectiries + lastDirectories + 1)
+            {
+                return fullPath;
+            }
+
+            return string.Join(Path.DirectorySeparatorChar.ToString(), parts.Take(firstDirectiries))
+                + Path.DirectorySeparatorChar + "..." + Path.DirectorySeparatorChar
+                + string.Join(Path.DirectorySeparatorChar.ToString(), parts.Skip(parts.Length - lastDirectories));
         }
 
 
@@ -127,22 +150,6 @@ namespace LPAP.Forms
             TrackView.ReflowAllTrackViews();
         }
 
-        private void checkBox_enableMonitoring_CheckedChanged(object sender, EventArgs e)
-        {
-            this.StatisticsEnabled = this.checkBox_enableMonitoring.Checked;
-            this.numericUpDown_statisticsUpdateDelay.Enabled = this.checkBox_enableMonitoring.Checked;
-            if (!this.StatisticsEnabled)
-            {
-                this.pictureBox_cores.Image = null;
-                this.progressBar_memory.Value = 0;
-                this.label_memory.Text = "Memory: N/A";
-            }
-            else
-            {
-                this.StatisticsUpdateDelayMs = (int) this.numericUpDown_statisticsUpdateDelay.Value;
-            }
-        }
-
         private void numericUpDown_statisticsUpdateDelay_ValueChanged(object sender, EventArgs e)
         {
             this.StatisticsUpdateDelayMs = (int) this.numericUpDown_statisticsUpdateDelay.Value;
@@ -159,6 +166,39 @@ namespace LPAP.Forms
             LoopControlWindow.Show();
         }
 
-        
+        private void button_browse_Click(object sender, EventArgs e)
+        {
+            bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+
+            if (ctrlFlag)
+            {
+                // Open Explorer at export directory
+                try
+                {
+                    Process.Start("explorer.exe", ExportDirectory);
+                }
+                catch (Exception ex)
+                {
+                    CudaLog.Error(ex, "Failed to open export directory in Explorer", "UI");
+                }
+
+                return;
+            }
+
+            // Select export directory
+            using var fbd = new FolderBrowserDialog
+            {
+                Description = "Select Export Directory",
+                SelectedPath = ExportDirectory,
+                ShowNewFolderButton = true,
+            };
+            if (fbd.ShowDialog(this) == DialogResult.OK)
+            {
+                ExportDirectory = fbd.SelectedPath;
+                this.label_exportDirectory.Text = "Dir: " + ShortenPathForDisplay(ExportDirectory, 2, 1);
+                NvencVideoRenderer.WriteExportPath_To_LocalStats(ExportDirectory);
+                CudaLog.Info($"Set export directory to: {ExportDirectory}", "", "UI");
+            }
+        }
     }
 }

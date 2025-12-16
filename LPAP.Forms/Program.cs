@@ -1,31 +1,29 @@
 using LPAP.Audio;
 using LPAP.Cuda;
+
 namespace LPAP.Forms
 {
-	internal static class Program
-	{
-		/// <summary>
-		///  The main entry point for the application.
-		/// </summary>
-		[STAThread]
-		static void Main()
-		{
-			ApplicationConfiguration.Initialize();
+    internal static class Program
+    {
+        [STAThread]
+        static void Main()
+        {
+            ApplicationConfiguration.Initialize();
 
-            Application.Idle += (_, __) =>
+            EventHandler? idleHandler = null;
+            idleHandler = (_, __) =>
             {
-                // run once
-                Application.Idle -= (_, __) => { };
-
-                Task.Run(() =>
+                Application.Idle -= idleHandler!;
+                _ = Task.Run(() =>
                 {
                     try { NvencVideoRenderer.WriteHardwareInfo_To_LocalStats(); }
                     catch { }
                 });
             };
+            Application.Idle += idleHandler;
 
             AudioScheduling.ConfigureProcessForAudio();
             Application.Run(new WindowMain());
         }
-	}
+    }
 }

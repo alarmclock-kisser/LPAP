@@ -48,19 +48,28 @@
             this.numericUpDown_amplification = new NumericUpDown();
             this.label_time = new Label();
             this.label_framesPerSec = new Label();
-            this.comboBox_preset = new ComboBox();
+            this.comboBox_codecPreset = new ComboBox();
             this.button_codecInfo = new Button();
+            this.label_percentage = new Label();
+            this.comboBox_mode = new ComboBox();
+            this.comboBox_visPreset = new ComboBox();
+            this.label1 = new Label();
+            this.button_preview = new Button();
+            this.numericUpDown_previewDuration = new NumericUpDown();
+            this.label_info_previewDuration = new Label();
+            this.button_backColor = new Button();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_frameRate).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_startSeconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_endSeconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_threads).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_volume).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_amplification).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) this.numericUpDown_previewDuration).BeginInit();
             this.SuspendLayout();
             // 
             // button_render
             // 
-            this.button_render.Location = new Point(240, 286);
+            this.button_render.Location = new Point(360, 406);
             this.button_render.Name = "button_render";
             this.button_render.Size = new Size(92, 23);
             this.button_render.TabIndex = 0;
@@ -70,10 +79,10 @@
             // 
             // progressBar_rendering
             // 
-            this.progressBar_rendering.Location = new Point(12, 286);
+            this.progressBar_rendering.Location = new Point(12, 406);
             this.progressBar_rendering.Maximum = 1000;
             this.progressBar_rendering.Name = "progressBar_rendering";
-            this.progressBar_rendering.Size = new Size(222, 23);
+            this.progressBar_rendering.Size = new Size(342, 23);
             this.progressBar_rendering.TabIndex = 1;
             // 
             // comboBox_resolution
@@ -81,19 +90,20 @@
             this.comboBox_resolution.FormattingEnabled = true;
             this.comboBox_resolution.Location = new Point(12, 27);
             this.comboBox_resolution.Name = "comboBox_resolution";
-            this.comboBox_resolution.Size = new Size(222, 23);
+            this.comboBox_resolution.Size = new Size(240, 23);
             this.comboBox_resolution.TabIndex = 2;
             this.comboBox_resolution.Text = "Select Resolution...";
             this.comboBox_resolution.SelectedIndexChanged += this.comboBox_resolution_SelectedIndexChanged;
+            this.comboBox_resolution.Click += this.comboBox_resolution_Click;
             // 
             // numericUpDown_frameRate
             // 
             this.numericUpDown_frameRate.DecimalPlaces = 2;
-            this.numericUpDown_frameRate.Location = new Point(12, 133);
+            this.numericUpDown_frameRate.Location = new Point(258, 27);
             this.numericUpDown_frameRate.Maximum = new decimal(new int[] { 144, 0, 0, 0 });
             this.numericUpDown_frameRate.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
             this.numericUpDown_frameRate.Name = "numericUpDown_frameRate";
-            this.numericUpDown_frameRate.Size = new Size(60, 23);
+            this.numericUpDown_frameRate.Size = new Size(70, 23);
             this.numericUpDown_frameRate.TabIndex = 3;
             this.numericUpDown_frameRate.Value = new decimal(new int[] { 24, 0, 0, 0 });
             this.numericUpDown_frameRate.ValueChanged += this.numericUpDown_frameRate_ValueChanged;
@@ -101,17 +111,17 @@
             // label_info_frameRate
             // 
             this.label_info_frameRate.AutoSize = true;
-            this.label_info_frameRate.Location = new Point(12, 115);
+            this.label_info_frameRate.Location = new Point(258, 9);
             this.label_info_frameRate.Name = "label_info_frameRate";
-            this.label_info_frameRate.Size = new Size(26, 15);
+            this.label_info_frameRate.Size = new Size(66, 15);
             this.label_info_frameRate.TabIndex = 4;
-            this.label_info_frameRate.Text = "FPS";
+            this.label_info_frameRate.Text = "Frame Rate";
             // 
             // numericUpDown_startSeconds
             // 
             this.numericUpDown_startSeconds.DecimalPlaces = 2;
             this.numericUpDown_startSeconds.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-            this.numericUpDown_startSeconds.Location = new Point(12, 177);
+            this.numericUpDown_startSeconds.Location = new Point(12, 141);
             this.numericUpDown_startSeconds.Maximum = new decimal(new int[] { 999999, 0, 0, 0 });
             this.numericUpDown_startSeconds.Name = "numericUpDown_startSeconds";
             this.numericUpDown_startSeconds.Size = new Size(70, 23);
@@ -121,7 +131,7 @@
             // label_info_startSeconds
             // 
             this.label_info_startSeconds.AutoSize = true;
-            this.label_info_startSeconds.Location = new Point(12, 159);
+            this.label_info_startSeconds.Location = new Point(12, 123);
             this.label_info_startSeconds.Name = "label_info_startSeconds";
             this.label_info_startSeconds.Size = new Size(54, 15);
             this.label_info_startSeconds.TabIndex = 6;
@@ -130,7 +140,7 @@
             // label_info_endSeconds
             // 
             this.label_info_endSeconds.AutoSize = true;
-            this.label_info_endSeconds.Location = new Point(88, 159);
+            this.label_info_endSeconds.Location = new Point(88, 123);
             this.label_info_endSeconds.Name = "label_info_endSeconds";
             this.label_info_endSeconds.Size = new Size(50, 15);
             this.label_info_endSeconds.TabIndex = 8;
@@ -140,7 +150,7 @@
             // 
             this.numericUpDown_endSeconds.DecimalPlaces = 2;
             this.numericUpDown_endSeconds.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-            this.numericUpDown_endSeconds.Location = new Point(88, 177);
+            this.numericUpDown_endSeconds.Location = new Point(88, 141);
             this.numericUpDown_endSeconds.Maximum = new decimal(new int[] { 999999, 0, 0, 0 });
             this.numericUpDown_endSeconds.Name = "numericUpDown_endSeconds";
             this.numericUpDown_endSeconds.Size = new Size(70, 23);
@@ -150,7 +160,7 @@
             // label_sizeApprox
             // 
             this.label_sizeApprox.AutoSize = true;
-            this.label_sizeApprox.Location = new Point(12, 268);
+            this.label_sizeApprox.Location = new Point(12, 82);
             this.label_sizeApprox.Name = "label_sizeApprox";
             this.label_sizeApprox.Size = new Size(88, 15);
             this.label_sizeApprox.TabIndex = 9;
@@ -161,7 +171,7 @@
             this.checkBox_copyPath.AutoSize = true;
             this.checkBox_copyPath.Checked = true;
             this.checkBox_copyPath.CheckState = CheckState.Checked;
-            this.checkBox_copyPath.Location = new Point(12, 206);
+            this.checkBox_copyPath.Location = new Point(368, 381);
             this.checkBox_copyPath.Name = "checkBox_copyPath";
             this.checkBox_copyPath.Size = new Size(81, 19);
             this.checkBox_copyPath.TabIndex = 10;
@@ -170,7 +180,7 @@
             // 
             // numericUpDown_threads
             // 
-            this.numericUpDown_threads.Location = new Point(280, 27);
+            this.numericUpDown_threads.Location = new Point(400, 27);
             this.numericUpDown_threads.Maximum = new decimal(new int[] { 1, 0, 0, 0 });
             this.numericUpDown_threads.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             this.numericUpDown_threads.Name = "numericUpDown_threads";
@@ -181,7 +191,7 @@
             // label_info_threads
             // 
             this.label_info_threads.AutoSize = true;
-            this.label_info_threads.Location = new Point(280, 9);
+            this.label_info_threads.Location = new Point(400, 9);
             this.label_info_threads.Name = "label_info_threads";
             this.label_info_threads.Size = new Size(49, 15);
             this.label_info_threads.TabIndex = 12;
@@ -199,17 +209,19 @@
             // numericUpDown_volume
             // 
             this.numericUpDown_volume.DecimalPlaces = 1;
-            this.numericUpDown_volume.Location = new Point(262, 177);
+            this.numericUpDown_volume.ForeColor = Color.Gray;
+            this.numericUpDown_volume.Location = new Point(164, 141);
             this.numericUpDown_volume.Maximum = new decimal(new int[] { 150, 0, 0, 0 });
             this.numericUpDown_volume.Name = "numericUpDown_volume";
             this.numericUpDown_volume.Size = new Size(70, 23);
             this.numericUpDown_volume.TabIndex = 14;
             this.numericUpDown_volume.Value = new decimal(new int[] { 100, 0, 0, 0 });
+            this.numericUpDown_volume.ValueChanged += this.numericUpDown_volume_ValueChanged;
             // 
             // label_info_volume
             // 
             this.label_info_volume.AutoSize = true;
-            this.label_info_volume.Location = new Point(262, 159);
+            this.label_info_volume.Location = new Point(164, 123);
             this.label_info_volume.Name = "label_info_volume";
             this.label_info_volume.Size = new Size(60, 15);
             this.label_info_volume.TabIndex = 15;
@@ -218,7 +230,7 @@
             // label_amplification
             // 
             this.label_amplification.AutoSize = true;
-            this.label_amplification.Location = new Point(164, 159);
+            this.label_amplification.Location = new Point(382, 196);
             this.label_amplification.Name = "label_amplification";
             this.label_amplification.Size = new Size(62, 15);
             this.label_amplification.TabIndex = 17;
@@ -228,17 +240,17 @@
             // 
             this.numericUpDown_amplification.DecimalPlaces = 1;
             this.numericUpDown_amplification.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-            this.numericUpDown_amplification.Location = new Point(164, 177);
+            this.numericUpDown_amplification.Location = new Point(382, 214);
             this.numericUpDown_amplification.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
             this.numericUpDown_amplification.Name = "numericUpDown_amplification";
             this.numericUpDown_amplification.Size = new Size(70, 23);
             this.numericUpDown_amplification.TabIndex = 16;
-            this.numericUpDown_amplification.Value = new decimal(new int[] { 667, 0, 0, 65536 });
+            this.numericUpDown_amplification.Value = new decimal(new int[] { 541, 0, 0, 65536 });
             // 
             // label_time
             // 
             this.label_time.AutoSize = true;
-            this.label_time.Location = new Point(240, 268);
+            this.label_time.Location = new Point(164, 388);
             this.label_time.Name = "label_time";
             this.label_time.Size = new Size(78, 15);
             this.label_time.TabIndex = 18;
@@ -247,25 +259,26 @@
             // label_framesPerSec
             // 
             this.label_framesPerSec.AutoSize = true;
-            this.label_framesPerSec.Location = new Point(240, 253);
+            this.label_framesPerSec.Location = new Point(12, 388);
             this.label_framesPerSec.Name = "label_framesPerSec";
             this.label_framesPerSec.Size = new Size(58, 15);
             this.label_framesPerSec.TabIndex = 19;
             this.label_framesPerSec.Text = "~ 0.00 fps";
             // 
-            // comboBox_preset
+            // comboBox_codecPreset
             // 
-            this.comboBox_preset.FormattingEnabled = true;
-            this.comboBox_preset.Location = new Point(12, 56);
-            this.comboBox_preset.Name = "comboBox_preset";
-            this.comboBox_preset.Size = new Size(193, 23);
-            this.comboBox_preset.TabIndex = 20;
-            this.comboBox_preset.Text = "Select Preset...";
+            this.comboBox_codecPreset.FormattingEnabled = true;
+            this.comboBox_codecPreset.Location = new Point(12, 56);
+            this.comboBox_codecPreset.Name = "comboBox_codecPreset";
+            this.comboBox_codecPreset.Size = new Size(211, 23);
+            this.comboBox_codecPreset.TabIndex = 20;
+            this.comboBox_codecPreset.Text = "Select Codec Preset...";
+            this.comboBox_codecPreset.Click += this.comboBox_codecPreset_Click;
             // 
             // button_codecInfo
             // 
             this.button_codecInfo.Font = new Font("Bahnschrift", 9F, FontStyle.Bold, GraphicsUnit.Point,  0);
-            this.button_codecInfo.Location = new Point(211, 56);
+            this.button_codecInfo.Location = new Point(229, 56);
             this.button_codecInfo.Name = "button_codecInfo";
             this.button_codecInfo.Size = new Size(23, 23);
             this.button_codecInfo.TabIndex = 21;
@@ -273,13 +286,99 @@
             this.button_codecInfo.UseVisualStyleBackColor = true;
             this.button_codecInfo.Click += this.button_codecInfo_Click;
             // 
+            // label_percentage
+            // 
+            this.label_percentage.AutoSize = true;
+            this.label_percentage.Location = new Point(303, 388);
+            this.label_percentage.Name = "label_percentage";
+            this.label_percentage.Size = new Size(41, 15);
+            this.label_percentage.TabIndex = 22;
+            this.label_percentage.Text = "0.00 %";
+            // 
+            // comboBox_mode
+            // 
+            this.comboBox_mode.FormattingEnabled = true;
+            this.comboBox_mode.Location = new Point(303, 141);
+            this.comboBox_mode.Name = "comboBox_mode";
+            this.comboBox_mode.Size = new Size(149, 23);
+            this.comboBox_mode.TabIndex = 23;
+            this.comboBox_mode.Text = "Select Mode...";
+            // 
+            // comboBox_visPreset
+            // 
+            this.comboBox_visPreset.FormattingEnabled = true;
+            this.comboBox_visPreset.Location = new Point(303, 170);
+            this.comboBox_visPreset.Name = "comboBox_visPreset";
+            this.comboBox_visPreset.Size = new Size(149, 23);
+            this.comboBox_visPreset.TabIndex = 24;
+            this.comboBox_visPreset.Text = "Select Preset...";
+            // 
+            // label1
+            // 
+            this.label1.AutoSize = true;
+            this.label1.Location = new Point(303, 123);
+            this.label1.Name = "label1";
+            this.label1.Size = new Size(101, 15);
+            this.label1.TabIndex = 25;
+            this.label1.Text = "Visualizer Settings";
+            // 
+            // button_preview
+            // 
+            this.button_preview.Location = new Point(372, 243);
+            this.button_preview.Name = "button_preview";
+            this.button_preview.Size = new Size(80, 23);
+            this.button_preview.TabIndex = 26;
+            this.button_preview.Text = "Preview";
+            this.button_preview.UseVisualStyleBackColor = true;
+            this.button_preview.Click += this.button_preview_Click;
+            // 
+            // numericUpDown_previewDuration
+            // 
+            this.numericUpDown_previewDuration.Location = new Point(303, 243);
+            this.numericUpDown_previewDuration.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
+            this.numericUpDown_previewDuration.Minimum = new decimal(new int[] { 3, 0, 0, 0 });
+            this.numericUpDown_previewDuration.Name = "numericUpDown_previewDuration";
+            this.numericUpDown_previewDuration.Size = new Size(63, 23);
+            this.numericUpDown_previewDuration.TabIndex = 27;
+            this.numericUpDown_previewDuration.Value = new decimal(new int[] { 8, 0, 0, 0 });
+            // 
+            // label_info_previewDuration
+            // 
+            this.label_info_previewDuration.AutoSize = true;
+            this.label_info_previewDuration.Location = new Point(303, 225);
+            this.label_info_previewDuration.Name = "label_info_previewDuration";
+            this.label_info_previewDuration.Size = new Size(53, 15);
+            this.label_info_previewDuration.TabIndex = 28;
+            this.label_info_previewDuration.Text = "Duration";
+            // 
+            // button_backColor
+            // 
+            this.button_backColor.BackColor = Color.Black;
+            this.button_backColor.Font = new Font("Bahnschrift Condensed", 9F, FontStyle.Regular, GraphicsUnit.Point,  0);
+            this.button_backColor.ForeColor = Color.White;
+            this.button_backColor.Location = new Point(222, 243);
+            this.button_backColor.Name = "button_backColor";
+            this.button_backColor.Size = new Size(75, 23);
+            this.button_backColor.TabIndex = 29;
+            this.button_backColor.Text = "Background";
+            this.button_backColor.UseVisualStyleBackColor = false;
+            this.button_backColor.Click += this.button_backColor_Click;
+            // 
             // VisualizerDialog
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
-            this.ClientSize = new Size(344, 321);
+            this.ClientSize = new Size(464, 441);
+            this.Controls.Add(this.button_backColor);
+            this.Controls.Add(this.label_info_previewDuration);
+            this.Controls.Add(this.numericUpDown_previewDuration);
+            this.Controls.Add(this.button_preview);
+            this.Controls.Add(this.label1);
+            this.Controls.Add(this.comboBox_visPreset);
+            this.Controls.Add(this.comboBox_mode);
+            this.Controls.Add(this.label_percentage);
             this.Controls.Add(this.button_codecInfo);
-            this.Controls.Add(this.comboBox_preset);
+            this.Controls.Add(this.comboBox_codecPreset);
             this.Controls.Add(this.label_framesPerSec);
             this.Controls.Add(this.label_time);
             this.Controls.Add(this.label_amplification);
@@ -300,8 +399,8 @@
             this.Controls.Add(this.comboBox_resolution);
             this.Controls.Add(this.progressBar_rendering);
             this.Controls.Add(this.button_render);
-            this.MaximumSize = new Size(360, 360);
-            this.MinimumSize = new Size(360, 360);
+            this.MaximumSize = new Size(480, 480);
+            this.MinimumSize = new Size(480, 480);
             this.Name = "VisualizerDialog";
             this.Text = "VisualizerDialog";
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_frameRate).EndInit();
@@ -310,6 +409,7 @@
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_threads).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_volume).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_amplification).EndInit();
+            ((System.ComponentModel.ISupportInitialize) this.numericUpDown_previewDuration).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
         }
@@ -336,7 +436,15 @@
         private NumericUpDown numericUpDown_amplification;
         private Label label_time;
         private Label label_framesPerSec;
-        private ComboBox comboBox_preset;
+        private ComboBox comboBox_codecPreset;
         private Button button_codecInfo;
+        private Label label_percentage;
+        private ComboBox comboBox_mode;
+        private ComboBox comboBox_visPreset;
+        private Label label1;
+        private Button button_preview;
+        private NumericUpDown numericUpDown_previewDuration;
+        private Label label_info_previewDuration;
+        private Button button_backColor;
     }
 }

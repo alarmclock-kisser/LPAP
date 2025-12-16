@@ -68,7 +68,7 @@ namespace LPAP.Cuda
                 SpeedScore: 35
             ),
 
-                ["X264_ULTRAFAST_PREVIEW"] = new(
+                ["X264_ULTRAFASTPREVIEW"] = new(
                 HardwareTech_EN: "CPU-based libx264 in ultrafast mode with minimal analysis for maximum speed.",
                 HardwareTech_DE: "CPU-basierter libx264 im Ultrafast-Modus mit minimaler Analyse für maximale Geschwindigkeit.",
                 QualityScore: 60,

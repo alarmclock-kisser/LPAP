@@ -563,13 +563,19 @@ internal sealed class CudaRegister : IDisposable
         return null;
     }
 
-    public T[] PullData<T>(IntPtr indexPointer, bool keep = false) where T : unmanaged
+    public T[] PullData<T>(IntPtr indexPointer, bool keep = false, int groupIndex = 0) where T : unmanaged
     {
         this.EnsureContext();
         var mem = this[indexPointer];
         if (mem == null || mem.ElementType != typeof(T) || mem.IndexLength == IntPtr.Zero)
         {
             return [];
+        }
+
+        groupIndex = Math.Clamp(groupIndex, 0, mem.Count - 1);
+        if (groupIndex > 0)
+        {
+            indexPointer = mem.Pointers[groupIndex];
         }
 
         long count = mem.IndexLength.ToInt64();

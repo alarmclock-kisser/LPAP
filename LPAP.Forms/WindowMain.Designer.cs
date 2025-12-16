@@ -48,6 +48,8 @@
             this.comboBox_cudaKernels = new ComboBox();
             this.button_cudaExecute = new Button();
             this.button_cudaInfo = new Button();
+            this.button_browse = new Button();
+            this.label_exportDirectory = new Label();
             ((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).BeginInit();
             this.SuspendLayout();
@@ -211,7 +213,7 @@
             // 
             this.panel_cudaKernelArguments.Location = new Point(12, 215);
             this.panel_cudaKernelArguments.Name = "panel_cudaKernelArguments";
-            this.panel_cudaKernelArguments.Size = new Size(310, 160);
+            this.panel_cudaKernelArguments.Size = new Size(310, 156);
             this.panel_cudaKernelArguments.TabIndex = 16;
             // 
             // comboBox_cudaKernels
@@ -225,7 +227,7 @@
             // 
             // button_cudaExecute
             // 
-            this.button_cudaExecute.Location = new Point(247, 406);
+            this.button_cudaExecute.Location = new Point(247, 377);
             this.button_cudaExecute.Name = "button_cudaExecute";
             this.button_cudaExecute.Size = new Size(75, 23);
             this.button_cudaExecute.TabIndex = 18;
@@ -244,11 +246,33 @@
             this.button_cudaInfo.UseVisualStyleBackColor = true;
             this.button_cudaInfo.Click += this.button_cudaInfo_Click;
             // 
+            // button_browse
+            // 
+            this.button_browse.Font = new Font("Bahnschrift", 9F, FontStyle.Bold, GraphicsUnit.Point,  0);
+            this.button_browse.Location = new Point(290, 406);
+            this.button_browse.Name = "button_browse";
+            this.button_browse.Size = new Size(32, 23);
+            this.button_browse.TabIndex = 20;
+            this.button_browse.Text = "[...]";
+            this.button_browse.UseVisualStyleBackColor = true;
+            this.button_browse.Click += this.button_browse_Click;
+            // 
+            // label_exportDirectory
+            // 
+            this.label_exportDirectory.AutoSize = true;
+            this.label_exportDirectory.Location = new Point(12, 410);
+            this.label_exportDirectory.Name = "label_exportDirectory";
+            this.label_exportDirectory.Size = new Size(33, 15);
+            this.label_exportDirectory.TabIndex = 21;
+            this.label_exportDirectory.Text = "Dir: -";
+            // 
             // WindowMain
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(604, 441);
+            this.Controls.Add(this.label_exportDirectory);
+            this.Controls.Add(this.button_browse);
             this.Controls.Add(this.button_cudaInfo);
             this.Controls.Add(this.button_cudaExecute);
             this.Controls.Add(this.comboBox_cudaKernels);
@@ -302,5 +326,7 @@
 		private ComboBox comboBox_cudaKernels;
 		private Button button_cudaExecute;
         private Button button_cudaInfo;
+        private Button button_browse;
+        private Label label_exportDirectory;
     }
 }

@@ -38,10 +38,15 @@ namespace LPAP.Cuda
                     .FirstOrDefault(n => n.EndsWith("LocalStats.txt", StringComparison.OrdinalIgnoreCase));
 
                 if (string.IsNullOrWhiteSpace(resName))
+                {
                     return null;
+                }
 
                 using var s = asm.GetManifestResourceStream(resName);
-                if (s is null) return null;
+                if (s is null)
+                {
+                    return null;
+                }
 
                 using var r = new StreamReader(s, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
                 return r.ReadToEnd();
@@ -85,7 +90,10 @@ namespace LPAP.Cuda
                 {
                     // If file exists but is empty/corrupt, we still try to keep it and just ensure it has some content.
                     var fi = new FileInfo(path);
-                    if (fi.Length > 0) return;
+                    if (fi.Length > 0)
+                    {
+                        return;
+                    }
 
                     // If empty, write minimal skeleton (do NOT use export copies anywhere)
                     File.WriteAllText(path, BuildMinimalLocalStatsSkeleton(), Encoding.UTF8);
@@ -95,7 +103,9 @@ namespace LPAP.Cuda
                 // First run: try embedded template
                 string? template = ReadEmbeddedLocalStatsTemplateText();
                 if (string.IsNullOrWhiteSpace(template))
+                {
                     template = BuildMinimalLocalStatsSkeleton();
+                }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, template, Encoding.UTF8);
@@ -115,7 +125,9 @@ namespace LPAP.Cuda
 
             // Reserve header lines (we overwrite these)
             for (int i = 0; i < HardwareHeaderLinesCount; i++)
+            {
                 sb.AppendLine("N/A");
+            }
 
             sb.AppendLine();
             sb.AppendLine("----- HISTORY -----");
@@ -132,7 +144,9 @@ namespace LPAP.Cuda
 
                 var path = LocalStatsPersistentFilePath;
                 if (!File.Exists(path))
+                {
                     return [];
+                }
 
                 // IMPORTANT: Only ever read from the AppData file.
                 return File.ReadAllLines(path, Encoding.UTF8);
@@ -165,25 +179,91 @@ namespace LPAP.Cuda
             }
         }
 
-        private static void SafeAppendLines(IEnumerable<string> linesToAppend)
+        private static void SafeAppendLines(IEnumerable<string> linesToAppend, int findAndOverwriteByFirstWordsMatching = 0)
         {
             try
             {
                 EnsureLocalStatsFileExists();
 
                 var path = LocalStatsPersistentFilePath;
-
-                // IMPORTANT: Only ever append to the AppData file.
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.AppendAllLines(path, linesToAppend, Encoding.UTF8);
+
+                var newLines = linesToAppend.ToList();
+                if (newLines.Count == 0)
+                {
+                    return;
+                }
+
+                if (!File.Exists(path))
+                {
+                    File.WriteAllLines(path, newLines, Encoding.UTF8);
+                    return;
+                }
+
+                // Read existing
+                var existingLines = File.ReadAllLines(path, Encoding.UTF8).ToList();
+
+                // ---------- overwrite mode ----------
+                if (findAndOverwriteByFirstWordsMatching > 0)
+                {
+                    // tokenizer: split by whitespace + punctuation
+                    static string[] Tokenize(string line) =>
+                        line.Split(
+                            new[] { ' ', '\t', ',', '.', ':', ';', '-', '_', '(', ')', '[', ']' },
+                            StringSplitOptions.RemoveEmptyEntries);
+
+                    // Pre-tokenize new block
+                    var newTokens = newLines
+                        .Select(l => Tokenize(l)
+                            .Take(findAndOverwriteByFirstWordsMatching)
+                            .Select(w => w.ToLowerInvariant())
+                            .ToArray())
+                        .ToList();
+
+                    for (int i = 0; i <= existingLines.Count - newLines.Count; i++)
+                    {
+                        bool blockMatches = true;
+
+                        for (int j = 0; j < newLines.Count; j++)
+                        {
+                            var existingTok = Tokenize(existingLines[i + j])
+                                .Take(findAndOverwriteByFirstWordsMatching)
+                                .Select(w => w.ToLowerInvariant())
+                                .ToArray();
+
+                            if (existingTok.Length < newTokens[j].Length ||
+                                !existingTok.SequenceEqual(newTokens[j]))
+                            {
+                                blockMatches = false;
+                                break;
+                            }
+                        }
+
+                        if (blockMatches)
+                        {
+                            // Overwrite block in-place
+                            for (int j = 0; j < newLines.Count; j++)
+                            {
+                                existingLines[i + j] = newLines[j];
+                            }
+
+                            File.WriteAllLines(path, existingLines, Encoding.UTF8);
+                            return;
+                        }
+                    }
+                }
+
+                // ---------- fallback: append ----------
+                File.AppendAllLines(path, newLines, Encoding.UTF8);
             }
             catch
             {
-                // ignore
+                // ignore – stats must never crash the app
             }
         }
 
-        
+
+
 
         private static string NA(string? s) => string.IsNullOrWhiteSpace(s) ? "N/A" : s!;
         private static string NA(int? v) => v.HasValue ? v.Value.ToString(CultureInfo.InvariantCulture) : "N/A";
@@ -193,6 +273,24 @@ namespace LPAP.Cuda
         // ----------------------------
         // Public API
         // ----------------------------
+        public static string Reset_LocalStats_File()
+        {
+            try
+            {
+                var path = LocalStatsPersistentFilePath;
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+                EnsureLocalStatsFileExists();
+                return LocalStatsPersistentFilePath;
+            }
+            catch (Exception ex)
+            {
+                return $"Failed to reset LocalStats file: {ex.Message}";
+            }
+        }
+
         public static void WriteHardwareInfo_To_LocalStats()
         {
             try
@@ -262,10 +360,14 @@ namespace LPAP.Cuda
 
                 // Ensure file has at least HardwareHeaderLinesCount lines
                 while (lines.Count < HardwareHeaderLinesCount)
+                {
                     lines.Add("N/A");
+                }
 
                 for (int i = 0; i < HardwareHeaderLinesCount && i < header.Count; i++)
+                {
                     lines[i] = header[i];
+                }
 
                 // If header list is longer than count, we still only write the reserved chunk.
                 SafeWriteAllLines(lines.ToArray());
@@ -279,10 +381,51 @@ namespace LPAP.Cuda
             }
         }
 
+        public static void WriteExportPath_To_LocalStats(string exportFilePath)
+        {
+            var lines = new List<string>
+            {
+                "----- ----- ----- ----- -----",
+                $"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                $"Exported Videos to: {exportFilePath}",
+                "----- ----- ----- ----- -----",
+                ""
+            };
+            SafeAppendLines(lines, 1);
+        }
+
+        public static string? ReadExportPath_From_LocalStats(bool fallbackToMyVideos = false)
+        {
+            try
+            {
+                var lines = SafeReadAllLines();
+                for (int i = lines.Length - 1; i >= 0; i--)
+                {
+                    var line = lines[i];
+                    if (line.StartsWith("Exported Videos to:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parts = line.Split([':'], 2);
+                        if (parts.Length == 2)
+                        {
+                            var path = parts[1].Trim();
+                            return string.IsNullOrWhiteSpace(path) ? null : Directory.Exists(path) ? Path.GetFullPath(path) : fallbackToMyVideos ? Environment.GetFolderPath(Environment.SpecialFolder.MyVideos) : null;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+            return fallbackToMyVideos ? Environment.GetFolderPath(Environment.SpecialFolder.MyVideos) : null;
+        }
+
         public static void WriteVideoRenderingResult_To_LocalStats(
             string presetKey,
             double renderTimeSeconds,
             double averageFps,
+            long totalFrames,
+            double totalRenderedFramesMb,
             long outputFileSizeBytes)
         {
             var lines = new List<string>
@@ -292,6 +435,8 @@ namespace LPAP.Cuda
                 $"Preset Key: {presetKey}",
                 $"Render Time (s): {renderTimeSeconds:F2}",
                 $"Average FPS: {averageFps:F2}",
+                $"Total Frames: {totalFrames}",
+                $"Total Rendered Frames (MB): {totalRenderedFramesMb:F2}",
                 $"Output File Size (MB): {outputFileSizeBytes / (1024.0 * 1024.0):F2}",
                 "----- ----- ----- ----- -----",
                 ""
@@ -356,7 +501,9 @@ namespace LPAP.Cuda
                 {
                     var fn = Path.GetFileNameWithoutExtension(f);
                     if (fn.StartsWith(baseFileName, StringComparison.OrdinalIgnoreCase))
+                    {
                         sameNameCount++;
+                    }
                 }
 
                 string fileName = baseFileName + (sameNameCount > 0 ? $"({sameNameCount})" : "") + extension;
@@ -387,7 +534,11 @@ namespace LPAP.Cuda
             {
 #if WINDOWS
                 var name = WmiFirstString("Win32_Processor", "Name");
-                if (string.IsNullOrWhiteSpace(name)) return null;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    return null;
+                }
+
                 return getModelName ? name.Trim() : name.Trim();
 #else
                 return null;
@@ -439,11 +590,17 @@ namespace LPAP.Cuda
                 // Prefer nvidia-smi if NVIDIA, otherwise WMI fallback
                 var nvsmi = GetNvidiaSmiGpuName();
                 if (!string.IsNullOrWhiteSpace(nvsmi))
+                {
                     return nvsmi;
+                }
 
 #if WINDOWS
                 var name = WmiFirstString("Win32_VideoController", "Name");
-                if (string.IsNullOrWhiteSpace(name)) return null;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    return null;
+                }
+
                 return name.Trim();
 #else
                 return null;
@@ -458,12 +615,19 @@ namespace LPAP.Cuda
             {
                 // Prefer nvidia-smi if available
                 var mb = GetNvidiaSmiMemoryTotalMb();
-                if (mb.HasValue) return mb.Value;
+                if (mb.HasValue)
+                {
+                    return mb.Value;
+                }
 
 #if WINDOWS
                 // AdapterRAM is bytes (often)
                 var bytes = WmiFirstLong("Win32_VideoController", "AdapterRAM");
-                if (!bytes.HasValue || bytes.Value <= 0) return null;
+                if (!bytes.HasValue || bytes.Value <= 0)
+                {
+                    return null;
+                }
+
                 return bytes.Value / (1024.0 * 1024.0);
 #else
                 return null;
@@ -489,7 +653,11 @@ namespace LPAP.Cuda
 #if WINDOWS
                 // TotalPhysicalMemory is bytes
                 var bytes = WmiFirstLong("Win32_ComputerSystem", "TotalPhysicalMemory");
-                if (!bytes.HasValue || bytes.Value <= 0) return null;
+                if (!bytes.HasValue || bytes.Value <= 0)
+                {
+                    return null;
+                }
+
                 return bytes.Value / (1024.0 * 1024.0 * 1024.0);
 #else
                 return null;
@@ -510,7 +678,11 @@ namespace LPAP.Cuda
                     .Select(x => x!.Value)
                     .ToList();
 
-                if (speeds.Count == 0) return null;
+                if (speeds.Count == 0)
+                {
+                    return null;
+                }
+
                 return speeds.Max();
 #else
                 return null;
@@ -527,7 +699,10 @@ namespace LPAP.Cuda
                 // Best-effort: infer by number of modules and typical dual/quad patterns.
 #if WINDOWS
                 var modules = WmiAllStrings("Win32_PhysicalMemory", "Capacity").Count();
-                if (modules <= 0) return null;
+                if (modules <= 0)
+                {
+                    return null;
+                }
 
                 return modules switch
                 {
@@ -551,7 +726,10 @@ namespace LPAP.Cuda
 #if WINDOWS
                 // There is Win32_PhysicalMemory.ErrorCorrectionType but often empty.
                 var ect = WmiFirstInt("Win32_PhysicalMemory", "ErrorCorrectionType");
-                if (!ect.HasValue) return "Unknown";
+                if (!ect.HasValue)
+                {
+                    return "Unknown";
+                }
 
                 // Rough mapping: 0/1/2 vary by vendor. We'll be conservative.
                 return ect.Value switch
@@ -577,7 +755,11 @@ namespace LPAP.Cuda
                 // pick the first DiskDrive (often fine) + InterfaceType.
                 var model = WmiFirstString("Win32_DiskDrive", "Model");
                 var iface = WmiFirstString("Win32_DiskDrive", "InterfaceType");
-                if (string.IsNullOrWhiteSpace(model) && string.IsNullOrWhiteSpace(iface)) return null;
+                if (string.IsNullOrWhiteSpace(model) && string.IsNullOrWhiteSpace(iface))
+                {
+                    return null;
+                }
+
                 return $"{NA(model)} ({NA(iface)})";
 #else
                 return null;
@@ -591,7 +773,11 @@ namespace LPAP.Cuda
             try
             {
                 var drive = new DriveInfo("C");
-                if (!drive.IsReady) return null;
+                if (!drive.IsReady)
+                {
+                    return null;
+                }
+
                 return drive.TotalSize / (1024.0 * 1024.0 * 1024.0);
             }
             catch { return null; }
@@ -629,19 +815,28 @@ namespace LPAP.Cuda
             {
                 // easiest: parse "CUDA Version: X.Y" from nvidia-smi
                 var s = TryRunProcessCapture("nvidia-smi", "", timeoutMs: 1500);
-                if (string.IsNullOrWhiteSpace(s)) return null;
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    return null;
+                }
 
                 // Look for "CUDA Version:"
                 var idx = s.IndexOf("CUDA Version", StringComparison.OrdinalIgnoreCase);
-                if (idx < 0) return null;
+                if (idx < 0)
+                {
+                    return null;
+                }
 
                 // crude parse
                 var sub = s.Substring(idx);
                 var colon = sub.IndexOf(':');
-                if (colon < 0) return null;
+                if (colon < 0)
+                {
+                    return null;
+                }
 
                 var after = sub[(colon + 1)..].Trim();
-                var token = after.Split(new[] { ' ', '|', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                var token = after.Split([' ', '|', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)
                                  .FirstOrDefault();
 
                 return string.IsNullOrWhiteSpace(token) ? null : token;
@@ -658,16 +853,24 @@ namespace LPAP.Cuda
             try
             {
                 var s = TryRunProcessCapture("ffmpeg", "-version", timeoutMs: 1500);
-                if (string.IsNullOrWhiteSpace(s)) return null;
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    return null;
+                }
 
                 // first line: "ffmpeg version X ..."
                 var first = s.Split('\n').FirstOrDefault()?.Trim();
-                if (string.IsNullOrWhiteSpace(first)) return null;
+                if (string.IsNullOrWhiteSpace(first))
+                {
+                    return null;
+                }
 
                 // Try extract second token
                 var parts = first.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 3 && parts[0].Equals("ffmpeg", StringComparison.OrdinalIgnoreCase) && parts[1].Equals("version", StringComparison.OrdinalIgnoreCase))
+                {
                     return parts[2];
+                }
 
                 return first;
             }
@@ -683,7 +886,7 @@ namespace LPAP.Cuda
             {
                 // --query-gpu=name --format=csv,noheader
                 var s = TryRunProcessCapture("nvidia-smi", "--query-gpu=name --format=csv,noheader,nounits", 1500);
-                var line = s?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                var line = s?.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
                 return string.IsNullOrWhiteSpace(line) ? null : line.Trim();
             }
             catch { return null; }
@@ -694,12 +897,22 @@ namespace LPAP.Cuda
             try
             {
                 var s = TryRunProcessCapture("nvidia-smi", "--query-gpu=memory.total --format=csv,noheader,nounits", 1500);
-                var line = s?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                if (string.IsNullOrWhiteSpace(line)) return null;
+                var line = s?.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    return null;
+                }
+
                 if (double.TryParse(line.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out var mb))
+                {
                     return mb;
+                }
+
                 if (double.TryParse(line.Trim(), NumberStyles.Any, CultureInfo.CurrentCulture, out mb))
+                {
                     return mb;
+                }
+
                 return null;
             }
             catch { return null; }
@@ -711,13 +924,22 @@ namespace LPAP.Cuda
             {
                 string field = memoryClock ? "clocks.mem" : "clocks.gr";
                 var s = TryRunProcessCapture("nvidia-smi", $"--query-gpu={field} --format=csv,noheader,nounits", 1500);
-                var line = s?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                if (string.IsNullOrWhiteSpace(line)) return null;
+                var line = s?.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    return null;
+                }
 
                 if (int.TryParse(line.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out var mhz))
+                {
                     return mhz;
+                }
+
                 if (int.TryParse(line.Trim(), NumberStyles.Any, CultureInfo.CurrentCulture, out mhz))
+                {
                     return mhz;
+                }
+
                 return null;
             }
             catch { return null; }
@@ -741,7 +963,10 @@ namespace LPAP.Cuda
                 };
 
                 using var p = new Process { StartInfo = psi };
-                if (!p.Start()) return null;
+                if (!p.Start())
+                {
+                    return null;
+                }
 
                 var sb = new StringBuilder();
 
@@ -755,8 +980,15 @@ namespace LPAP.Cuda
                     return null;
                 }
 
-                if (!string.IsNullOrWhiteSpace(stdout)) sb.AppendLine(stdout);
-                if (!string.IsNullOrWhiteSpace(stderr)) sb.AppendLine(stderr);
+                if (!string.IsNullOrWhiteSpace(stdout))
+                {
+                    sb.AppendLine(stdout);
+                }
+
+                if (!string.IsNullOrWhiteSpace(stderr))
+                {
+                    sb.AppendLine(stderr);
+                }
 
                 var text = sb.ToString().Trim();
                 return string.IsNullOrWhiteSpace(text) ? null : text;
@@ -780,7 +1012,10 @@ namespace LPAP.Cuda
                 foreach (ManagementObject mo in results)
                 {
                     var v = mo[prop]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(v)) return v;
+                    if (!string.IsNullOrWhiteSpace(v))
+                    {
+                        return v;
+                    }
                 }
                 return null;
             }
@@ -796,10 +1031,20 @@ namespace LPAP.Cuda
                 foreach (ManagementObject mo in results)
                 {
                     var o = mo[prop];
-                    if (o is null) continue;
+                    if (o is null)
+                    {
+                        continue;
+                    }
 
-                    if (o is int i) return i;
-                    if (int.TryParse(o.ToString(), out i)) return i;
+                    if (o is int i)
+                    {
+                        return i;
+                    }
+
+                    if (int.TryParse(o.ToString(), out i))
+                    {
+                        return i;
+                    }
                 }
                 return null;
             }
@@ -815,10 +1060,20 @@ namespace LPAP.Cuda
                 foreach (ManagementObject mo in results)
                 {
                     var o = mo[prop];
-                    if (o is null) continue;
+                    if (o is null)
+                    {
+                        continue;
+                    }
 
-                    if (o is long l) return l;
-                    if (long.TryParse(o.ToString(), out l)) return l;
+                    if (o is long l)
+                    {
+                        return l;
+                    }
+
+                    if (long.TryParse(o.ToString(), out l))
+                    {
+                        return l;
+                    }
                 }
                 return null;
             }
