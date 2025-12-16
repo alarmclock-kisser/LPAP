@@ -398,7 +398,10 @@ namespace LPAP.Forms
                     var p = t.GetProperty(pn, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                     if (p != null && typeof(AudioObj).IsAssignableFrom(p.PropertyType))
                     {
-                        if (p.GetValue(form) is AudioObj ao) return ao;
+                        if (p.GetValue(form) is AudioObj ao)
+                        {
+                            return ao;
+                        }
                     }
                 }
 
@@ -408,7 +411,10 @@ namespace LPAP.Forms
                     var f = t.GetField(fn, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                     if (f != null && typeof(AudioObj).IsAssignableFrom(f.FieldType))
                     {
-                        if (f.GetValue(form) is AudioObj ao) return ao;
+                        if (f.GetValue(form) is AudioObj ao)
+                        {
+                            return ao;
+                        }
                     }
                 }
 
@@ -439,7 +445,9 @@ namespace LPAP.Forms
 
                         // ignore pointer args in UI (CudaService auto-wires audio buffers)
                         if (argType == typeof(ManagedCuda.BasicTypes.CUdeviceptr) || argType.Name.Contains("CUdeviceptr", StringComparison.OrdinalIgnoreCase))
+                        {
                             continue;
+                        }
 
                         object? valueObj = null;
 
@@ -452,13 +460,34 @@ namespace LPAP.Forms
                             else if (control is NumericUpDown nud)
                             {
                                 // cast numeric according to expected type
-                                if (argType == typeof(int)) valueObj = (int)nud.Value;
-                                else if (argType == typeof(long)) valueObj = (long)nud.Value;
-                                else if (argType == typeof(uint)) valueObj = (uint)nud.Value;
-                                else if (argType == typeof(ulong)) valueObj = (ulong)nud.Value;
-                                else if (argType == typeof(float)) valueObj = (float)nud.Value;
-                                else if (argType == typeof(double)) valueObj = (double)nud.Value;
-                                else if (argType == typeof(decimal)) valueObj = nud.Value;
+                                if (argType == typeof(int))
+                                {
+                                    valueObj = (int)nud.Value;
+                                }
+                                else if (argType == typeof(long))
+                                {
+                                    valueObj = (long)nud.Value;
+                                }
+                                else if (argType == typeof(uint))
+                                {
+                                    valueObj = (uint)nud.Value;
+                                }
+                                else if (argType == typeof(ulong))
+                                {
+                                    valueObj = (ulong)nud.Value;
+                                }
+                                else if (argType == typeof(float))
+                                {
+                                    valueObj = (float)nud.Value;
+                                }
+                                else if (argType == typeof(double))
+                                {
+                                    valueObj = (double)nud.Value;
+                                }
+                                else if (argType == typeof(decimal))
+                                {
+                                    valueObj = nud.Value;
+                                }
                                 else
                                 {
                                     // fallback: keep decimal
@@ -536,7 +565,10 @@ namespace LPAP.Forms
                         if (!string.IsNullOrWhiteSpace(s) && s.StartsWith("Dir:", StringComparison.OrdinalIgnoreCase))
                         {
                             var p = s.Substring(4).Trim();
-                            if (Directory.Exists(p)) exportDir = p;
+                            if (Directory.Exists(p))
+                            {
+                                exportDir = p;
+                            }
                         }
                     }
                     catch { /* ignore */ }

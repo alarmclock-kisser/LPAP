@@ -1107,7 +1107,7 @@ namespace LPAP.Cuda
             }
             catch
             {
-                return Array.Empty<int?>();
+                return [];
             }
         }
 
@@ -1137,7 +1137,7 @@ namespace LPAP.Cuda
             }
             catch
             {
-                return Array.Empty<string?>();
+                return [];
             }
         }
 #endif

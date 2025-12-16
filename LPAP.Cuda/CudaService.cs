@@ -304,35 +304,48 @@ namespace LPAP.Cuda
             return this.Register.Memory.Select(m => m.IndexPointer);
         }
 
-        public IEnumerable<string> GetKernels(string? ilter = null, bool showUncompiled = false, bool filePaths = false)
+        public IEnumerable<string?> GetKernels(string? filter = null, bool showUncompiled = false, bool filePaths = false)
         {
             if (this.Compiler == null)
             {
                 return [];
             }
 
-            List<string> kernels = [];
-            if (showUncompiled)
+            List<string> files = showUncompiled
+                ? this.Compiler.GetCuFiles(this.KernelsPath)
+                : this.Compiler.GetPtxFiles(this.KernelsPath);
+
+            if (files.Count == 0)
             {
-                kernels = this.Compiler.GetCuFiles(this.KernelsPath);
-            }
-            else
-            {
-                kernels = this.Compiler.GetPtxFiles(this.KernelsPath);
+                return [];
             }
 
-            if (!filePaths)
+            // Apply filter BEFORE returning and apply it to the "display name" as well.
+            if (!string.IsNullOrWhiteSpace(filter))
             {
-                return kernels.Select(k => Path.GetFileNameWithoutExtension(k)).ToList();
+                files = files
+                    .Where(f =>
+                    {
+                        // filter against both full path and kernel name
+                        var name = Path.GetFileNameWithoutExtension(f);
+                        return f.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                               name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+                    })
+                    .ToList();
             }
 
-            if (!string.IsNullOrWhiteSpace(ilter))
+            if (filePaths)
             {
-                kernels = kernels.Where(k => k.Contains(ilter, StringComparison.OrdinalIgnoreCase)).ToList();
+                return files;
             }
 
-            return kernels;
+            return files
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
+
 
         public Dictionary<string, Type>? GetKernelArguments(string? kernelName)
         {
@@ -474,7 +487,9 @@ namespace LPAP.Cuda
                 ct: ct).ConfigureAwait(false);
 
             if (outData is not { Length: > 0 })
+            {
                 return null;
+            }
 
             // NOTE: adjust if your AudioObj clone/copy API differs.
             AudioObj clone;
@@ -511,7 +526,9 @@ namespace LPAP.Cuda
                 ct: ct).ConfigureAwait(false);
 
             if (data is null || data.Length == 0)
+            {
                 return null;
+            }
 
             return data[0];
         }
@@ -683,7 +700,11 @@ namespace LPAP.Cuda
                     if (chunkSize <= 0)
                     {
                         var mem = await this.Register.AllocateSingleAsync<float>((IntPtr) audio.Data.LongLength).ConfigureAwait(false);
-                        if (mem == null) return null;
+                        if (mem == null)
+                        {
+                            return null;
+                        }
+
                         freeInput = true;
                         inputIndexPtr = mem.IndexPointer;
 
@@ -696,7 +717,11 @@ namespace LPAP.Cuda
                         var lengths = chunks.Select(c => (IntPtr) c.Length).ToArray();
 
                         var mem = await this.Register.AllocateGroupAsync<float>(lengths).ConfigureAwait(false);
-                        if (mem == null) return null;
+                        if (mem == null)
+                        {
+                            return null;
+                        }
+
                         freeInput = true;
                         inputIndexPtr = mem.IndexPointer;
 
@@ -734,10 +759,16 @@ namespace LPAP.Cuda
                             {
                                 // one output chunk per input chunk
                                 var inMem = (inputIndexPtr != IntPtr.Zero) ? this.Register[inputIndexPtr] : null;
-                                if (inMem == null) return null;
+                                if (inMem == null)
+                                {
+                                    return null;
+                                }
 
                                 var outMem = await this.Register.AllocateGroupAsync<float>(inMem.Lengths).ConfigureAwait(false);
-                                if (outMem == null) return null;
+                                if (outMem == null)
+                                {
+                                    return null;
+                                }
 
                                 freeOutput = true;
                                 outputIndexPtr = outMem.IndexPointer;
@@ -745,7 +776,10 @@ namespace LPAP.Cuda
                             else
                             {
                                 var outMem = await this.Register.AllocateSingleAsync<float>((IntPtr) len).ConfigureAwait(false);
-                                if (outMem == null) return null;
+                                if (outMem == null)
+                                {
+                                    return null;
+                                }
 
                                 freeOutput = true;
                                 outputIndexPtr = outMem.IndexPointer;
@@ -755,7 +789,10 @@ namespace LPAP.Cuda
                         {
                             // OutBuffer (GetValue/GetData)
                             var outMem = await this.Register.AllocateSingleAsync<T>((IntPtr) outElementCount).ConfigureAwait(false);
-                            if (outMem == null) return null;
+                            if (outMem == null)
+                            {
+                                return null;
+                            }
 
                             freeOutput = true;
                             outputIndexPtr = outMem.IndexPointer;
@@ -778,7 +815,10 @@ namespace LPAP.Cuda
                 if (chunkSize > 0 && inputPtrOverride is null)
                 {
                     var inMem = this.Register[inputIndexPtr];
-                    if (inMem == null) return null;
+                    if (inMem == null)
+                    {
+                        return null;
+                    }
 
                     var outMem = (outputIndexPtr != IntPtr.Zero) ? this.Register[outputIndexPtr] : null;
 
@@ -811,7 +851,9 @@ namespace LPAP.Cuda
                             arguments: userArgsString);
 
                         if (merged.Length == 0)
+                        {
                             return;
+                        }
 
                         Configure1D(kernel, inMem.Lengths[i].ToInt64());
                         kernel.Run(merged);
@@ -827,7 +869,9 @@ namespace LPAP.Cuda
                     else
                     {
                         for (int i = 0; i < inMem.Count; i++)
+                        {
                             await runChunk(i).ConfigureAwait(false);
+                        }
                     }
                 }
                 else
@@ -851,7 +895,9 @@ namespace LPAP.Cuda
                         arguments: userArgsString);
 
                     if (merged.Length == 0)
+                    {
                         return null;
+                    }
 
                     long workCount =
                         mode == AudioKernelMode.OutBuffer ? outElementCount :
@@ -875,7 +921,9 @@ namespace LPAP.Cuda
                 if (mode == AudioKernelMode.InPlace)
                 {
                     if (inputPtrOverride is not null)
+                    {
                         return null; // can't pull from raw CUdeviceptr without IndexPointer mapping
+                    }
 
                     // pull back into audio
                     var pulled = this.Register.PullData<float>(inputIndexPtr, keep: true);
@@ -889,7 +937,9 @@ namespace LPAP.Cuda
                 if (mode == AudioKernelMode.OutOfPlace)
                 {
                     if (outputPtrOverride is not null)
+                    {
                         return null;
+                    }
 
                     if (chunkSize <= 0)
                     {
@@ -900,12 +950,15 @@ namespace LPAP.Cuda
                     {
                         // Pull group chunks and overlap-add back to full length
                         var outMem = this.Register[outputIndexPtr];
-                        if (outMem == null) return null;
+                        if (outMem == null)
+                        {
+                            return null;
+                        }
 
                         var chunks = new List<float[]>(outMem.Count);
                         for (int i = 0; i < outMem.Count; i++)
                         {
-                            var c = this.Register.PullData<float>(outputIndexPtr, keep: true, groupIndex: i) ?? Array.Empty<float>();
+                            var c = this.Register.PullData<float>(outputIndexPtr, keep: true, groupIndex: i) ?? [];
                             chunks.Add(c);
                         }
 
@@ -916,7 +969,9 @@ namespace LPAP.Cuda
 
                 // OutBuffer
                 if (outputPtrOverride is not null)
+                {
                     return null;
+                }
 
                 var pulledT = this.Register.PullData<T>(outputIndexPtr, keep: true);
                 return pulledT;
@@ -936,14 +991,18 @@ namespace LPAP.Cuda
                 try
                 {
                     if (freeInput && inputIndexPtr != IntPtr.Zero)
+                    {
                         this.Register.FreeMemory(inputIndexPtr);
+                    }
                 }
                 catch { /* ignore */ }
 
                 try
                 {
                     if (freeOutput && outputIndexPtr != IntPtr.Zero)
+                    {
                         this.Register.FreeMemory(outputIndexPtr);
+                    }
                 }
                 catch { /* ignore */ }
             }
@@ -960,21 +1019,29 @@ namespace LPAP.Cuda
         private static Dictionary<string, string>? ToStringArgDict(Dictionary<string, object>? args)
         {
             if (args == null || args.Count == 0)
+            {
                 return null;
+            }
 
             var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var (k, v) in args)
             {
                 if (string.IsNullOrWhiteSpace(k))
+                {
                     continue;
+                }
 
                 // skip internal keys used by this wrapper
                 if (k.StartsWith("__", StringComparison.Ordinal))
+                {
                     continue;
+                }
 
                 if (v == null)
+                {
                     continue;
+                }
 
                 string s = v switch
                 {
@@ -986,7 +1053,9 @@ namespace LPAP.Cuda
                 };
 
                 if (!string.IsNullOrWhiteSpace(s))
+                {
                     d[k] = s;
+                }
             }
 
             return d.Count > 0 ? d : null;
@@ -994,8 +1063,15 @@ namespace LPAP.Cuda
 
         private static bool ReadBool(Dictionary<string, object>? args, string key, bool defaultValue)
         {
-            if (args == null) return defaultValue;
-            if (!args.TryGetValue(key, out var v) || v == null) return defaultValue;
+            if (args == null)
+            {
+                return defaultValue;
+            }
+
+            if (!args.TryGetValue(key, out var v) || v == null)
+            {
+                return defaultValue;
+            }
 
             return v switch
             {
@@ -1010,8 +1086,15 @@ namespace LPAP.Cuda
 
         private static CUdeviceptr? ReadDevicePtr(Dictionary<string, object>? args, string key)
         {
-            if (args == null) return null;
-            if (!args.TryGetValue(key, out var v) || v == null) return null;
+            if (args == null)
+            {
+                return null;
+            }
+
+            if (!args.TryGetValue(key, out var v) || v == null)
+            {
+                return null;
+            }
 
             try
             {
@@ -1032,11 +1115,18 @@ namespace LPAP.Cuda
 
         private static long ResolveOutputElementCount(Dictionary<string, object>? args, AudioObj audio)
         {
-            if (args == null) return 0;
+            if (args == null)
+            {
+                return 0;
+            }
 
             static long AsLong(object? v)
             {
-                if (v == null) return 0;
+                if (v == null)
+                {
+                    return 0;
+                }
+
                 return v switch
                 {
                     int i => i,
@@ -1059,7 +1149,10 @@ namespace LPAP.Cuda
                 if (args.TryGetValue(k, out var v))
                 {
                     var n = AsLong(v);
-                    if (n > 0) return n;
+                    if (n > 0)
+                    {
+                        return n;
+                    }
                 }
             }
 
@@ -1067,7 +1160,10 @@ namespace LPAP.Cuda
             if (args.TryGetValue("length", out var lv))
             {
                 var n = AsLong(lv);
-                if (n > 0) return n;
+                if (n > 0)
+                {
+                    return n;
+                }
             }
 
             // last fallback: if it looks like "getdata" but user forgot, return audio length
@@ -1087,7 +1183,9 @@ namespace LPAP.Cuda
                 list.Add(chunk);
 
                 if (start + copy >= src.Length)
+                {
                     break;
+                }
             }
 
             return list;
@@ -1103,7 +1201,10 @@ namespace LPAP.Cuda
             {
                 var c = chunks[i];
                 int copy = Math.Min(c.Length, targetLength - pos);
-                if (copy <= 0) break;
+                if (copy <= 0)
+                {
+                    break;
+                }
 
                 for (int j = 0; j < copy; j++)
                 {
@@ -1112,7 +1213,10 @@ namespace LPAP.Cuda
                 }
 
                 pos += hop;
-                if (pos >= targetLength) break;
+                if (pos >= targetLength)
+                {
+                    break;
+                }
             }
 
             return dst;
@@ -1123,7 +1227,10 @@ namespace LPAP.Cuda
             // basic sane defaults; your launcher has a smarter version internally, but it’s private :contentReference[oaicite:4]{index=4}
             int block = 256;
             long grid = (elementCount + block - 1) / block;
-            if (grid <= 0) grid = 1;
+            if (grid <= 0)
+            {
+                grid = 1;
+            }
 
             kernel.BlockDimensions = new dim3(block, 1, 1);
             kernel.GridDimensions = new dim3((uint) Math.Min(grid, int.MaxValue), 1, 1);

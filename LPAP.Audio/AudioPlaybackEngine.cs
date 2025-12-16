@@ -198,7 +198,9 @@ namespace LPAP.Audio
             lock (this._engineLock)
             {
                 if (this._mixer.WaveFormat.SampleRate == newSampleRate)
+                {
                     return;
+                }
 
                 // Snapshot active tracks
                 var active = this._tracks.Values.ToList();
@@ -243,13 +245,19 @@ namespace LPAP.Audio
 
             // Channel adaptation to current mixer format
             if (pipeline.WaveFormat.Channels == 1 && this._mixer.WaveFormat.Channels == 2)
+            {
                 pipeline = new MonoToStereoSampleProvider(pipeline);
+            }
             else if (pipeline.WaveFormat.Channels == 2 && this._mixer.WaveFormat.Channels == 1)
+            {
                 pipeline = new StereoToMonoSampleProvider(pipeline);
+            }
 
             // Resample to current mixer rate
             if (pipeline.WaveFormat.SampleRate != this._mixer.WaveFormat.SampleRate)
+            {
                 pipeline = new WdlResamplingSampleProvider(pipeline, this._mixer.WaveFormat.SampleRate);
+            }
 
             return pipeline;
         }
