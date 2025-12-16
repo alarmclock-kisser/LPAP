@@ -540,6 +540,61 @@ namespace LPAP.Cuda
 			}
 		}
 
+        public object GetDefaultArgValue(Type type, string name, AudioObj? audio)
+        {
+            object val = 0;
+
+            if (type == typeof(int))
+            {
+                // Length
+                if (name.Contains("len", StringComparison.OrdinalIgnoreCase) || name.Contains("count", StringComparison.OrdinalIgnoreCase))
+                {
+                    val = audio?.LengthSamples ?? 0;
+				}
+                else if (name.Contains("chunk"))
+                {
+                    val = audio?.ChunkSize ?? 1024;
+                }
+				else if (name.Contains("sample") || name.Contains("rate" , StringComparison.OrdinalIgnoreCase))
+				{
+					val = audio?.Channels ?? 44100;
+				}
+				else if (name.Contains("cha"))
+                {
+                    val = audio?.Channels ?? 1;
+                }
+            }
+			if (type == typeof(long))
+			{
+				// Length
+				if (name.Contains("len", StringComparison.OrdinalIgnoreCase) || name.Contains("count", StringComparison.OrdinalIgnoreCase))
+				{
+					val = audio?.LengthSamples ?? 0;
+				}
+			}
+			if (type == typeof(float))
+			{
+				// Length
+				if (name.Contains("bpm", StringComparison.OrdinalIgnoreCase) || name.Contains("beats", StringComparison.OrdinalIgnoreCase))
+				{
+					val = (float) (audio?.BeatsPerMinute ?? 120);
+				}
+                if (name.Contains("amp", StringComparison.OrdinalIgnoreCase))
+                {
+                    val = 1.0f;
+				}
+			}
+            if (type == typeof(double))
+            {
+				if (name.Contains("factor", StringComparison.OrdinalIgnoreCase) || name.Contains("stretch", StringComparison.OrdinalIgnoreCase))
+				{
+					val = audio?.StretchFactor ?? 1.0;
+				}
+			}
+
+			return val;
+        }
+
 
 
 

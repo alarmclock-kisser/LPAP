@@ -154,6 +154,8 @@ namespace LPAP.Forms
             this.panel_cudaKernelArguments.SuspendLayout();
             try
             {
+                // Ensure panel supports scrolling
+                this.panel_cudaKernelArguments.AutoScroll = true;
                 this.KernelArgumentControls = [];
                 this.panel_cudaKernelArguments.Controls.Clear();
 
@@ -217,9 +219,27 @@ namespace LPAP.Forms
 
 							Minimum = -1000000,
                             Maximum = 1000000,
-                            Increment = (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal)) ? 0.1m : 1m,
-                            Value = 0
+                            Increment = (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal)) ? 0.1m : 1m
                         };
+                        // set default value safely
+                        try
+                        {
+                            var defObj = this.Cuda.GetDefaultArgValue(argType, argName, WindowMain.LastSelectedTrackView?.Audio);
+                            decimal defVal = 0m;
+                            if (defObj is decimal dm)
+                            {
+                                defVal = dm;
+                            }
+                            else if (defObj != null)
+                            {
+                                defVal = Convert.ToDecimal(defObj, System.Globalization.CultureInfo.InvariantCulture);
+                            }
+
+                            if (defVal < nud.Minimum) defVal = nud.Minimum;
+                            if (defVal > nud.Maximum) defVal = nud.Maximum;
+                            nud.Value = defVal;
+                        }
+                        catch { /* ignore */ }
                         input = nud;
                     }
 
@@ -234,28 +254,34 @@ namespace LPAP.Forms
                     yOffset += 28;
                 }
 
-                if (yOffset > this.panel_cudaKernelArguments.Height)
+                // Update scrollable area and adjust widths if vertical scrollbar appears
+                int contentHeight = yOffset + 5;
+                this.panel_cudaKernelArguments.AutoScrollMinSize = new Size(0, contentHeight);
+
+                bool needVScroll = contentHeight > this.panel_cudaKernelArguments.ClientSize.Height;
+                if (needVScroll)
                 {
-                    this.panel_cudaKernelArguments.VerticalScroll.Enabled = true;
-					foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<NumericUpDown>())
-					{
-                        item.Width -= 17;
-					}
-					foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<TextBox>())
-					{
-						item.Width -= 17;
-					}
-					foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<CheckBox>())
-					{
-						item.Width -= 17;
-					}
-				}
+                    int sbw = System.Windows.Forms.SystemInformation.VerticalScrollBarWidth;
+                    foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<NumericUpDown>())
+                    {
+                        item.Width = Math.Max(20, item.Width - sbw);
+                    }
+                    foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<TextBox>())
+                    {
+                        item.Width = Math.Max(20, item.Width - sbw);
+                    }
+                    foreach (var item in this.panel_cudaKernelArguments.Controls.OfType<CheckBox>())
+                    {
+                        item.Width = Math.Max(20, item.Width - sbw);
+                    }
+                }
 
                 return Task.CompletedTask;
             }
             finally
             {
                 this.panel_cudaKernelArguments.ResumeLayout();
+                this.panel_cudaKernelArguments.PerformLayout();
             }
         }
 
@@ -399,7 +425,9 @@ namespace LPAP.Forms
                 return;
             }
 
-            string kernelName = this.SelectedKernelName ?? string.Empty;
+            bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+
+			string kernelName = this.SelectedKernelName ?? string.Empty;
             if (string.IsNullOrWhiteSpace(kernelName))
             {
                 MessageBox.Show("No kernel selected.", "CUDA", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -549,93 +577,116 @@ namespace LPAP.Forms
             overlap = Math.Clamp(overlap, 0.0f, 0.95f);
 
             bool ctrl = ModifierKeys.HasFlag(Keys.Control);
-            bool alt = ModifierKeys.HasFlag(Keys.Alt);
-            bool shift = ModifierKeys.HasFlag(Keys.Shift);
 
             try
             {
-                // ALT => GetValue<double>
-                if (alt)
-                {
-                    double? v = await this.Cuda.ExecuteAudioKernelGetValueAsync<double>(
-                        audio, kernelName, overlap: overlap, chunkSize: chunkSize, arguments: args).ConfigureAwait(true);
-
-                    MessageBox.Show($"Kernel '{kernelName}' returned: {(v.HasValue ? v.Value : "<null>")}", "CUDA GetValue<double>", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                // SHIFT => GetData<byte> (save .bin)
-                if (shift)
-                {
-                    var data = await this.Cuda.ExecuteAudioKernelGetDataAsync<byte>(
-                        audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
-
-                    if (data == null || data.Length == 0)
-                    {
-                        MessageBox.Show("Kernel returned no data.", "CUDA GetData<byte>", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    // export dir from label (fallback MyDocuments)
-                    string exportDir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                    try
-                    {
-                        var s = this.label_exportDirectory.Text;
-                        if (!string.IsNullOrWhiteSpace(s) && s.StartsWith("Dir:", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var p = s.Substring(4).Trim();
-                            if (Directory.Exists(p))
-                            {
-                                exportDir = p;
-                            }
-                        }
-                    }
-                    catch { /* ignore */ }
-
-                    Directory.CreateDirectory(exportDir);
-                    string outPath = Path.Combine(exportDir, $"Cuda_{kernelName}_{DateTime.Now:yyyyMMdd_HHmmss}.bin");
-                    File.WriteAllBytes(outPath, data);
-
-                    Clipboard.SetText(outPath);
-                    MessageBox.Show($"Wrote {data.Length} bytes:\n{outPath}\n\n(Path copied to clipboard)", "CUDA GetData<byte>", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                // CTRL => OutOfPlace
+                // Ctrl only: show argument summary (does not change execution mode)
                 if (ctrl)
                 {
-                    var outAudio = await this.Cuda.ExecuteAudioKernelOutOfPlaceAsync(
-                        audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
-
-                    if (outAudio == null)
+                    var lines = new List<string>();
+                    lines.Add($"Kernel: {kernelName}");
+                    lines.Add($"chunkSize: {chunkSize}");
+                    lines.Add($"overlap: {overlap}");
+                    foreach (var kv in args)
                     {
-                        MessageBox.Show("Kernel execution failed (no output).", "CUDA", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
+                        lines.Add($"{kv.Key} = {kv.Value}");
                     }
-
-                    // Apply on Close -> copy back into current audio (so UI keeps same instance)
-                    if (this.checkBox_autoApply.Checked)
-                    {
-                        try
-                        {
-                            audio.CopyAudioObj(outAudio);
-                            CudaLog.Info("Applied OutOfPlace result back to current audio.", kernelName);
-                        }
-                        catch (Exception ex)
-                        {
-                            CudaLog.Error(ex, "Failed to apply OutOfPlace result back to current audio.");
-                        }
-                    }
-
-                    CudaLog.Info("OutOfPlace kernel execution finished.", kernelName);
-                    return;
+                    MessageBox.Show(string.Join(Environment.NewLine, lines), "CUDA Args", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
 
-                // default => InPlace
-                await this.Cuda.ExecuteAudioKernelInPlaceAsync(
-                    audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
+                // Determine execution type dynamically
+                string kType = this.Cuda.GetKernelExecutionType(kernelName);
 
-                CudaLog.Info("InPlace kernel execution finished.", kernelName);
+                // Helper to infer output element type (2nd pointer arg base type if present)
+                static Type ResolveOutputElementType(Dictionary<string, Type>? defs)
+                {
+                    if (defs == null || defs.Count == 0)
+                    {
+                        return typeof(float);
+                    }
+                    var ptrs = defs.Where(kv => kv.Value.IsPointer).Select(kv => kv.Value.GetElementType()).Where(t => t != null).Cast<Type>().ToList();
+                    if (ptrs.Count >= 2)
+                    {
+                        return ptrs[1];
+                    }
+                    if (ptrs.Count == 1)
+                    {
+                        return ptrs[0];
+                    }
+                    return typeof(float);
+                }
+
+                var outElemType = ResolveOutputElementType(this.KernelArgumentDefinitions);
+
+                switch (kType.ToLowerInvariant())
+                {
+                    case "in-place":
+                        await this.Cuda.ExecuteAudioKernelInPlaceAsync(
+                            audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
+                        CudaLog.Info("InPlace kernel execution finished.", kernelName);
+                        break;
+
+                    case "out-of-place":
+                        {
+                            var outAudio = await this.Cuda.ExecuteAudioKernelOutOfPlaceAsync(
+                                audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
+                            if (outAudio == null)
+                            {
+                                MessageBox.Show("Kernel execution failed (no output).", "CUDA", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+                            if (this.checkBox_autoApply.Checked)
+                            {
+                                try
+                                {
+                                    audio.CopyAudioObj(outAudio);
+                                    CudaLog.Info("Applied OutOfPlace result back to current audio.", kernelName);
+                                }
+                                catch (Exception ex)
+                                {
+                                    CudaLog.Error(ex, "Failed to apply OutOfPlace result back to current audio.");
+                                }
+                            }
+                            CudaLog.Info("OutOfPlace kernel execution finished.", kernelName);
+                        }
+                        break;
+
+                    case "getvalue":
+                        {
+                            var mi = typeof(CudaService).GetMethod(nameof(CudaService.ExecuteAudioKernelGetValueAsync))!;
+                            var gmi = mi.MakeGenericMethod(outElemType);
+                            var taskObj = (Task)gmi.Invoke(this.Cuda, [audio, kernelName, chunkSize, overlap, args, CancellationToken.None])!;
+                            await taskObj.ConfigureAwait(true);
+                            var resultProp = taskObj.GetType().GetProperty("Result");
+                            var value = resultProp?.GetValue(taskObj);
+                            MessageBox.Show($"Kernel '{kernelName}' returned: {value ?? "<null>"}", $"CUDA GetValue<{outElemType.Name}>", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                        break;
+
+                    case "getdata":
+                        {
+                            var mi = typeof(CudaService).GetMethod(nameof(CudaService.ExecuteAudioKernelGetDataAsync))!;
+                            var gmi = mi.MakeGenericMethod(outElemType);
+                            var taskObj = (Task)gmi.Invoke(this.Cuda, new object?[] { audio, kernelName, chunkSize, overlap, args, CancellationToken.None })!;
+                            await taskObj.ConfigureAwait(true);
+                            var resultProp = taskObj.GetType().GetProperty("Result");
+                            var data = resultProp?.GetValue(taskObj) as Array;
+                            if (data == null || data.Length == 0)
+                            {
+                                MessageBox.Show("Kernel returned no data.", $"CUDA GetData<{outElemType.Name}>", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                return;
+                            }
+                            MessageBox.Show($"Kernel returned {data.Length} elements of {outElemType.Name}.", $"CUDA GetData<{outElemType.Name}>", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                        break;
+
+                    default:
+                        // Fallback: InPlace
+                        await this.Cuda.ExecuteAudioKernelInPlaceAsync(
+                            audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
+                        CudaLog.Info("InPlace kernel execution finished.", kernelName);
+                        break;
+                }
             }
             catch (OperationCanceledException)
             {
