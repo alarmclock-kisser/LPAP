@@ -51,6 +51,7 @@
 			this.button_browse = new Button();
 			this.label_exportDirectory = new Label();
 			this.label_kernelType = new Label();
+			this.label_fftRequired = new Label();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).BeginInit();
 			this.SuspendLayout();
@@ -276,11 +277,21 @@
 			this.label_kernelType.TabIndex = 22;
 			this.label_kernelType.Text = "No kernel loaded.";
 			// 
+			// label_fftRequired
+			// 
+			this.label_fftRequired.AutoSize = true;
+			this.label_fftRequired.Location = new Point(12, 389);
+			this.label_fftRequired.Name = "label_fftRequired";
+			this.label_fftRequired.Size = new Size(95, 15);
+			this.label_fftRequired.TabIndex = 23;
+			this.label_fftRequired.Text = "No FFT required.";
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(604, 441);
+			this.Controls.Add(this.label_fftRequired);
 			this.Controls.Add(this.label_kernelType);
 			this.Controls.Add(this.label_exportDirectory);
 			this.Controls.Add(this.button_browse);
@@ -340,5 +351,6 @@
         private Button button_browse;
         private Label label_exportDirectory;
 		private Label label_kernelType;
+		private Label label_fftRequired;
 	}
 }

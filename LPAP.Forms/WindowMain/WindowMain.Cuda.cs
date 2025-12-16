@@ -1,5 +1,6 @@
 ﻿using LPAP.Audio;
 using LPAP.Cuda;
+using ManagedCuda.VectorTypes;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -30,6 +31,7 @@ namespace LPAP.Forms
 			}
 		}
 
+		public Boolean FftRequired { get; private set; }
 
 		private void ListBox_Bind_CudaLog()
 		{
@@ -409,7 +411,11 @@ namespace LPAP.Forms
 
                 // Build UI for args (on UI thread)
                 await this.BuildCudaKernelArgsAsync().ConfigureAwait(true);
-                this.label_kernelType.Text = "Kernel Type: " + this.Cuda.GetKernelExecutionType(this.SelectedKernelName);
+				this.FftRequired = this.KernelArgumentDefinitions?.Values.Where(t => t.IsPointer).FirstOrDefault() == typeof(float2*);
+
+				this.label_kernelType.Text = "Kernel Type: " + this.Cuda.GetKernelExecutionType(this.SelectedKernelName);
+				this.label_fftRequired.Text = this.FftRequired ? "FFT Required: Yes" : "FFT Required: No";
+                this.label_fftRequired.ForeColor = this.FftRequired ? System.Drawing.Color.DarkGreen : System.Drawing.Color.Gray;
 			}
             catch (Exception ex)
             {
