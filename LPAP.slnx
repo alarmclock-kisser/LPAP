@@ -2,4 +2,5 @@
   <Project Path="LPAP.Audio/LPAP.Audio.csproj" />
   <Project Path="LPAP.Cuda/LPAP.Cuda.csproj" Id="e9485f86-0727-4a0a-be8c-f514e1073274" />
   <Project Path="LPAP.Forms/LPAP.Forms.csproj" />
+  <Project Path="LPAP.Onnx/LPAP.Onnx.csproj" Id="5cf666ff-cab1-44b8-8b50-3c476c6a3191" />
 </Solution>
