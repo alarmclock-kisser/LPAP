@@ -35,25 +35,25 @@ namespace LPAP.Cuda
         {
             public static NvencOptions H264Default => new(
                 VideoCodec: "h264_nvenc",
-                Preset: "p5",
+                Preset: "p2",         // p1 oder p2 für Speed! p5 ist zu langsam.
                 VideoBitrateKbps: null,
                 MaxBitrateKbps: null,
                 BufferSizeKbps: null,
-                ConstantQuality: 20,
+                ConstantQuality: 23,  // 23 ist guter Standard, 20 ist overkill für Visualizer
                 Crf: null,
-                Profile: "high",
+                Profile: "main",      // "main" ist sicherer und schneller als "high"
                 FastStart: true
-            );
+);
 
             public static NvencOptions HevcDefault => new(
                 VideoCodec: "hevc_nvenc",
-                Preset: "p5",
+                Preset: "p2",         // auch hier Speed
                 VideoBitrateKbps: null,
                 MaxBitrateKbps: null,
                 BufferSizeKbps: null,
-                ConstantQuality: 22,
+                ConstantQuality: 25,  // HEVC ist effizienter, höherer CQ ist ok
                 Crf: null,
-                Profile: null,
+                Profile: "main",      // WICHTIG: HEVC hasst oft "high". "main" ist Standard.
                 FastStart: true
             );
         }
@@ -186,7 +186,7 @@ namespace LPAP.Cuda
             progress?.Report(0.0);
 
             // 5) FFmpeg args (Video stdin raw BGRA)
-            var args = BuildFfmpegArgs(
+            var args = BuildFfmpegArgsFast(
                 width, height, frameRate,
                 audioFilePath,
                 resolvedOutputPath,
@@ -530,7 +530,7 @@ namespace LPAP.Cuda
             string pipeName = "lpap_nvenc_audio_" + Guid.NewGuid().ToString("N");
             string pipePath = $@"\\.\pipe\{pipeName}";
 
-            string args = BuildFfmpegArgsWithRawAudioPipe(
+            string args = BuildFfmpegArgsWithRawAudioPipeFast(
                 width, height, frameRate,
                 pipePath, audioSampleRate, audioChannels,
                 output,
@@ -861,7 +861,7 @@ namespace LPAP.Cuda
             string pipeName = "lpap_nvenc_audio_" + Guid.NewGuid().ToString("N");
             string pipePath = $@"\\.\pipe\{pipeName}";
 
-            var args = BuildFfmpegArgsWithRawAudioPipe(
+            var args = BuildFfmpegArgsWithRawAudioPipeFast(
                 width, height, frameRate,
                 pipePath, audioSampleRate, audioChannels,
                 resolvedOutputPath,
@@ -1061,7 +1061,7 @@ namespace LPAP.Cuda
             string pipeName = "lpap_nvenc_audio_" + Guid.NewGuid().ToString("N");
             string pipePath = $@"\\.\pipe\{pipeName}";
 
-            var args = BuildFfmpegArgsWithRawAudioPipe(
+            var args = BuildFfmpegArgsWithRawAudioPipeFast(
                 width, height, frameRate,
                 pipePath, audioSampleRate, audioChannels,
                 resolvedOutputPath,
@@ -1500,6 +1500,211 @@ namespace LPAP.Cuda
             if (!string.IsNullOrWhiteSpace(options.Profile))
             {
                 sb.Append($"-profile:v {options.Profile} ");
+            }
+
+            sb.Append("-pix_fmt yuv420p ");
+            sb.Append("-c:a aac -b:a 192k -shortest ");
+
+            if (options.FastStart)
+            {
+                sb.Append("-movflags +faststart ");
+            }
+
+            sb.Append("-y ");
+            sb.Append($"\"{outputPath}\"");
+
+            return sb.ToString();
+        }
+
+        private static string BuildFfmpegArgsFast(
+            int width,
+            int height,
+            float frameRate,
+            string? audioFilePath,
+            string outputPath,
+            NvencOptions options)
+        {
+            static bool IsNvenc(string codec) => codec.Contains("_nvenc", StringComparison.OrdinalIgnoreCase);
+            static bool NeedsBv0ForCrf(string codec) => codec.Contains("av1", StringComparison.OrdinalIgnoreCase) || codec.StartsWith("libvpx", StringComparison.OrdinalIgnoreCase);
+
+            var sb = new StringBuilder();
+
+            // Basis-Flags
+            sb.Append("-hide_banner -nostats -loglevel error -progress pipe:1 ");
+
+            // Thread Queue für Input-Pipes erhöhen (verhindert Stottern)
+            sb.Append("-thread_queue_size 512 ");
+
+            // Input definieren
+            sb.Append(CultureInfo.InvariantCulture,
+                $"-f rawvideo -pix_fmt bgra -s {width}x{height} -r {frameRate:0.########} -i pipe:0 ");
+
+            if (!string.IsNullOrWhiteSpace(audioFilePath))
+            {
+                sb.Append($"-i \"{audioFilePath}\" ");
+            }
+
+            // Codec
+            sb.Append($"-c:v {options.VideoCodec} ");
+
+            // Preset & Tuning (Hier lag wahrscheinlich der Fehler)
+            if (!string.IsNullOrWhiteSpace(options.Preset))
+            {
+                // Wenn User p5 nutzt, überschreiben wir es hier NICHT hart, 
+                // sondern vertrauen auf die options (siehe unten bei "Anpassung Options")
+                sb.Append($"-preset {options.Preset} ");
+            }
+
+            // NVENC Spezifische Speed-Optimierungen (SAFE MODE)
+            if (IsNvenc(options.VideoCodec))
+            {
+                // B-Frames aus = Massive Speed-Steigerung & weniger VRAM Last
+                sb.Append("-bf 0 ");
+
+                // GOP auf 2 Sekunden fixieren (statt automatisch)
+                sb.Append(CultureInfo.InvariantCulture, $"-g {(int) (frameRate * 2)} ");
+            }
+
+            // Bitrate / Qualität
+            if (IsNvenc(options.VideoCodec))
+            {
+                if (options.ConstantQuality.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-cq:v {options.ConstantQuality.Value} ");
+                }
+                else if (options.VideoBitrateKbps.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                    var maxRate = options.MaxBitrateKbps ?? options.VideoBitrateKbps.Value;
+                    var bufSize = options.BufferSizeKbps ?? options.VideoBitrateKbps.Value;
+                    sb.Append(CultureInfo.InvariantCulture, $"-maxrate {maxRate}k -bufsize {bufSize}k ");
+                }
+            }
+            else
+            {
+                // CPU Fallback
+                if (options.Crf.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-crf {options.Crf.Value} ");
+                    if (!options.VideoBitrateKbps.HasValue && NeedsBv0ForCrf(options.VideoCodec)) sb.Append("-b:v 0 ");
+                }
+                else if (options.VideoBitrateKbps.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                }
+            }
+
+            // Profil (Nur setzen, wenn es nicht null ist UND Sinn ergibt)
+            // HEVC unterstützt "high" oft nicht (sondern "main"), daher hier Vorsicht.
+            if (!string.IsNullOrWhiteSpace(options.Profile))
+            {
+                // Kleiner Schutz: Falls HEVC und "high" eingestellt ist, ignorieren wir es, um Absturz zu vermeiden.
+                bool isHevc = options.VideoCodec.Contains("hevc", StringComparison.OrdinalIgnoreCase);
+                bool isHigh = options.Profile.Equals("high", StringComparison.OrdinalIgnoreCase);
+
+                if (!(isHevc && isHigh))
+                {
+                    sb.Append($"-profile:v {options.Profile} ");
+                }
+            }
+
+            // Output Format (Pixel Format Conversion)
+            // Wir nutzen explizit -pix_fmt yuv420p für Kompatibilität.
+            // Entfernt: -sws_flags (verursacht manchmal Syntax-Fehler wenn kein Filter-Graph da ist)
+            sb.Append("-pix_fmt yuv420p ");
+
+            // Audio Settings
+            if (!string.IsNullOrWhiteSpace(audioFilePath))
+            {
+                sb.Append("-c:a aac -b:a 192k -shortest ");
+            }
+
+            if (options.FastStart)
+            {
+                sb.Append("-movflags +faststart ");
+            }
+
+            sb.Append("-y ");
+            sb.Append($"\"{outputPath}\"");
+
+            return sb.ToString();
+        }
+
+        // Dieselbe Logik für die RawAudioPipe-Variante:
+        private static string BuildFfmpegArgsWithRawAudioPipeFast(
+            int width, int height, float frameRate,
+            string audioPipePath, int audioSampleRate, int audioChannels,
+            string outputPath, NvencOptions options)
+        {
+            static bool IsNvenc(string codec) => codec.Contains("_nvenc", StringComparison.OrdinalIgnoreCase);
+            static bool NeedsBv0ForCrf(string codec) => codec.Contains("av1", StringComparison.OrdinalIgnoreCase) || codec.StartsWith("libvpx", StringComparison.OrdinalIgnoreCase);
+
+            var sb = new StringBuilder();
+
+            sb.Append("-hide_banner -nostats -loglevel error -progress pipe:1 ");
+
+            // Thread Queue
+            sb.Append("-thread_queue_size 512 ");
+            sb.Append(CultureInfo.InvariantCulture,
+                $"-f rawvideo -pix_fmt bgra -s {width}x{height} -r {frameRate:0.########} -i pipe:0 ");
+
+            sb.Append("-thread_queue_size 512 ");
+            sb.Append(CultureInfo.InvariantCulture,
+                $"-f s16le -ar {audioSampleRate} -ac {audioChannels} -i \"{audioPipePath}\" ");
+
+            // Codec
+            sb.Append($"-c:v {options.VideoCodec} ");
+
+            if (!string.IsNullOrWhiteSpace(options.Preset))
+            {
+                sb.Append($"-preset {options.Preset} ");
+            }
+
+            // NVENC Safe Speed Tuning
+            if (IsNvenc(options.VideoCodec))
+            {
+                sb.Append("-bf 0 "); // Keine B-Frames = Speed
+                sb.Append(CultureInfo.InvariantCulture, $"-g {(int) (frameRate * 2)} ");
+            }
+
+            // Bitrate / Quali
+            if (IsNvenc(options.VideoCodec))
+            {
+                if (options.ConstantQuality.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-cq:v {options.ConstantQuality.Value} ");
+                }
+                else if (options.VideoBitrateKbps.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                    var maxRate = options.MaxBitrateKbps ?? options.VideoBitrateKbps.Value;
+                    var bufSize = options.BufferSizeKbps ?? options.VideoBitrateKbps.Value;
+                    sb.Append(CultureInfo.InvariantCulture, $"-maxrate {maxRate}k -bufsize {bufSize}k ");
+                }
+            }
+            else
+            {
+                if (options.Crf.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-crf {options.Crf.Value} ");
+                    if (!options.VideoBitrateKbps.HasValue && NeedsBv0ForCrf(options.VideoCodec)) sb.Append("-b:v 0 ");
+                }
+                else if (options.VideoBitrateKbps.HasValue)
+                {
+                    sb.Append(CultureInfo.InvariantCulture, $"-b:v {options.VideoBitrateKbps.Value}k ");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.Profile))
+            {
+                // Safe check für HEVC Profile
+                bool isHevc = options.VideoCodec.Contains("hevc", StringComparison.OrdinalIgnoreCase);
+                bool isHigh = options.Profile.Equals("high", StringComparison.OrdinalIgnoreCase);
+
+                if (!(isHevc && isHigh))
+                {
+                    sb.Append($"-profile:v {options.Profile} ");
+                }
             }
 
             sb.Append("-pix_fmt yuv420p ");

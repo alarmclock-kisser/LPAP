@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LPAP.Audio\LPAP.Audio.csproj" />
     <ProjectReference Include="..\LPAP.Cuda\LPAP.Cuda.csproj" />
+    <ProjectReference Include="..\LPAP.Onnx\LPAP.Onnx.csproj" />
   </ItemGroup>
 
 </Project>

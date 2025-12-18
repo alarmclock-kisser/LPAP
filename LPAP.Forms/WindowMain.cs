@@ -200,5 +200,17 @@ namespace LPAP.Forms
                 CudaLog.Info($"Set export directory to: {ExportDirectory}", "", "UI");
             }
         }
+
+        private void button_stems_Click(object sender, EventArgs e)
+        {
+            if (LastSelectedTrackView == null)
+            {
+                CudaLog.Info("No track selected for stem separation", "UI");
+                return;
+            }
+
+            var dlg = new OnnxControlView(LastSelectedTrackView.Audio);
+            dlg.ShowDialog(this);
+        }
     }
 }
