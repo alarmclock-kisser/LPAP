@@ -47,7 +47,7 @@ namespace LPAP.Audio
         private WaveOutEvent _outputDevice;
         private MixingSampleProvider _mixer;
 
-        private readonly object _engineLock = new();
+        private readonly Lock _engineLock = new();
 
 
         private readonly ConcurrentDictionary<Guid, TrackHandle> _tracks = new();

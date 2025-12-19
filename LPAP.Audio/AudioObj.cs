@@ -39,7 +39,7 @@ namespace LPAP.Audio
 				this.OnPropertyChanged(nameof(this.SampleRate));
             }
         }
-		public int Channels { get; internal set; }
+		public int Channels { get; set; }
 		public int BitDepth { get; internal set; }
 		public long StartingSample { get; set; }
 
@@ -154,7 +154,7 @@ namespace LPAP.Audio
 		public Func<long> PlaybackBytesGetter => () => this.PlaybackPositionBytes;
 
 		public CustomTags CustomTags { get; set; } = new();
-		public int OverlapSize { get; internal set; }
+		public int OverlapSize { get; set; }
 		public double StretchFactor { get; set; }
 		public int ScannedBeatsPerMinute { get; set; }
 

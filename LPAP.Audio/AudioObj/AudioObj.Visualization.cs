@@ -124,53 +124,66 @@ namespace LPAP.Audio
 			int maxAmpPixels = channelHeight / 2 - 1;
 
 			// jedes Pixel repräsentiert samplesPerPixel Samples pro Kanal
-			for (int x = 0; x < width; x++)
+			try
 			{
-				ct.ThrowIfCancellationRequested();
-
-				long sampleStart = startSamples + (long) x * samplesPerPixel * this.Channels + channel;
-				long sampleEnd = sampleStart + (long) samplesPerPixel * this.Channels;
-
-				if (sampleStart >= this.Data.LongLength)
+				for (int x = 0; x < width; x++)
 				{
-					break;
-				}
+					ct.ThrowIfCancellationRequested();
 
-				float min = 0f;
-				float max = 0f;
-				bool hasSample = false;
+					long sampleStart = startSamples + (long) x * samplesPerPixel * this.Channels + channel;
+					long sampleEnd = sampleStart + (long) samplesPerPixel * this.Channels;
 
-				for (long s = sampleStart; s < sampleEnd && s < this.Data.LongLength; s += this.Channels)
-				{
-					float v = this.Data[s];
+					if (sampleStart >= this.Data.LongLength)
+					{
+						break;
+					}
+
+					float min = 0f;
+					float max = 0f;
+					bool hasSample = false;
+
+					for (long s = sampleStart; s < sampleEnd && s < this.Data.LongLength; s += this.Channels)
+					{
+						float v = this.Data[s];
+						if (!hasSample)
+						{
+							min = max = v;
+							hasSample = true;
+						}
+						else
+						{
+							if (v < min)
+							{
+								min = v;
+							}
+
+							if (v > max)
+							{
+								max = v;
+							}
+						}
+					}
+
 					if (!hasSample)
 					{
-						min = max = v;
-						hasSample = true;
+						continue;
 					}
-					else
-					{
-						if (v < min)
-						{
-							min = v;
-						}
 
-						if (v > max)
-						{
-							max = v;
-						}
-					}
+					int y1 = midY - (int) (max * maxAmpPixels);
+					int y2 = midY - (int) (min * maxAmpPixels);
+
+					g.DrawLine(pen, x, y1, x, y2);
 				}
-
-				if (!hasSample)
-				{
-					continue;
-				}
-
-				int y1 = midY - (int) (max * maxAmpPixels);
-				int y2 = midY - (int) (min * maxAmpPixels);
-
-				g.DrawLine(pen, x, y1, x, y2);
+			}
+			catch (OperationCanceledException)
+			{
+				// Abbruch
+				return;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine(ex);
+				return;
 			}
 		}
 

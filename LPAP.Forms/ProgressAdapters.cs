@@ -25,7 +25,7 @@ public static class ProgressAdapters
 			}
 
 			p = Math.Clamp(p, 0.0, 1.0);
-			int target = (int)Math.Round(p * max);
+			int target = (int) Math.Round(p * max);
 
 			if (bar.IsDisposed)
 			{
@@ -54,7 +54,7 @@ public static class ProgressAdapters
 
 			if (bar.InvokeRequired)
 			{
-				bar.BeginInvoke((Action)Apply);
+				bar.BeginInvoke((Action) Apply);
 			}
 			else
 			{

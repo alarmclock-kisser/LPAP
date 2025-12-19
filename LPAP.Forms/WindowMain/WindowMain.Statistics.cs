@@ -24,14 +24,14 @@ namespace LPAP.Forms
 		private bool _statsInitialized;
 		private volatile int _statsRunning; // 0 = idle, 1 = running
 
-		 // ---- configurable statistics sampling ----
+		// ---- configurable statistics sampling ----
 		// default delay used before initialization
 		private int _statsUpdateDelayMs = 250;
 		private bool _statsEnabled = true;
-        private CancellationTokenSource? _statsCts;
+		private CancellationTokenSource? _statsCts;
 
-        // Expose toggles for timer enable and update delay
-        [Browsable(false)]
+		// Expose toggles for timer enable and update delay
+		[Browsable(false)]
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool StatisticsEnabled
 		{
@@ -99,107 +99,107 @@ namespace LPAP.Forms
 			return timer;
 		}
 
-        private void StopStatisticsWorker()
-        {
-            try { this._statsCts?.Cancel(); } catch { }
-            this._statsCts?.Dispose();
-            this._statsCts = null;
-            Interlocked.Exchange(ref this._statsRunning, 0);
-        }
+		private void StopStatisticsWorker()
+		{
+			try { this._statsCts?.Cancel(); } catch { }
+			this._statsCts?.Dispose();
+			this._statsCts = null;
+			Interlocked.Exchange(ref this._statsRunning, 0);
+		}
 
-        private void EnsureStatisticsWorker()
-        {
-            this._statsCts ??= new CancellationTokenSource();
-            this.InitializeStatisticsTimer();
-            if (this._statsEnabled)
-            {
-                this._statisticsTimer!.Start();
-            }
-        }
+		private void EnsureStatisticsWorker()
+		{
+			this._statsCts ??= new CancellationTokenSource();
+			this.InitializeStatisticsTimer();
+			if (this._statsEnabled)
+			{
+				this._statisticsTimer!.Start();
+			}
+		}
 
-        private void checkBox_enableMonitoring_CheckedChanged(object sender, EventArgs e)
-        {
-            bool enabled = this.checkBox_enableMonitoring.Checked;
-            this.StatisticsEnabled = enabled;
-            this.numericUpDown_statisticsUpdateDelay.Enabled = enabled;
+		private void checkBox_enableMonitoring_CheckedChanged(object sender, EventArgs e)
+		{
+			bool enabled = this.checkBox_enableMonitoring.Checked;
+			this.StatisticsEnabled = enabled;
+			this.numericUpDown_statisticsUpdateDelay.Enabled = enabled;
 
-            if (enabled)
-            {
-                this.EnsureStatisticsWorker();
-                this.StatisticsUpdateDelayMs = (int)this.numericUpDown_statisticsUpdateDelay.Value;
-            }
-            else
-            {
-                this.StopStatisticsWorker();
-                this.pictureBox_cores.Image = null;
-                this.progressBar_memory.Value = 0;
-                this.label_memory.Text = "Memory: N/A";
-            }
-        }
+			if (enabled)
+			{
+				this.EnsureStatisticsWorker();
+				this.StatisticsUpdateDelayMs = (int) this.numericUpDown_statisticsUpdateDelay.Value;
+			}
+			else
+			{
+				this.StopStatisticsWorker();
+				this.pictureBox_cores.Image = null;
+				this.progressBar_memory.Value = 0;
+				this.label_memory.Text = "Memory: N/A";
+			}
+		}
 
-        private void StatisticsTimer_Tick(object? sender, EventArgs e)
-        {
-            if (!this._statsEnabled || Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
-            {
-                return;
-            }
+		private void StatisticsTimer_Tick(object? sender, EventArgs e)
+		{
+			if (!this._statsEnabled || Interlocked.CompareExchange(ref this._statsRunning, 1, 0) != 0)
+			{
+				return;
+			}
 
-            var token = this._statsCts?.Token ?? CancellationToken.None;
+			var token = this._statsCts?.Token ?? CancellationToken.None;
 
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    token.ThrowIfCancellationRequested();
+			_ = Task.Run(async () =>
+			{
+				try
+				{
+					token.ThrowIfCancellationRequested();
 
-                    long totalBytes = StatisticsExtensions.GetTotalMemoryBytes();
-                    long usedBytes = StatisticsExtensions.GetUsedMemoryBytes();
-                    this.MaxMemoryKb = totalBytes / 1024.0;
-                    this.UsedMemoryKb = usedBytes / 1024.0;
+					long totalBytes = StatisticsExtensions.GetTotalMemoryBytes();
+					long usedBytes = StatisticsExtensions.GetUsedMemoryBytes();
+					this.MaxMemoryKb = totalBytes / 1024.0;
+					this.UsedMemoryKb = usedBytes / 1024.0;
 
-                    this.UpdateMemoryUiSafe();
+					this.UpdateMemoryUiSafe();
 
-                    var usages = await StatisticsExtensions.GetThreadUsagesAsync(token).ConfigureAwait(false);
-                    this.CoreUsages = usages;
+					var usages = await StatisticsExtensions.GetThreadUsagesAsync(token).ConfigureAwait(false);
+					this.CoreUsages = usages;
 
-                    if (this.pictureBox_cores.Width > 0 && this.pictureBox_cores.Height > 0)
-                    {
-                        var bmp = await RenderCoresBitmapAsync(
-                            usages,
-                            this.pictureBox_cores.Width,
-                            this.pictureBox_cores.Height,
-                            this.pictureBox_cores.BackColor,
-                            token).ConfigureAwait(false);
+					if (this.pictureBox_cores.Width > 0 && this.pictureBox_cores.Height > 0)
+					{
+						var bmp = await RenderCoresBitmapAsync(
+							usages,
+							this.pictureBox_cores.Width,
+							this.pictureBox_cores.Height,
+							this.pictureBox_cores.BackColor,
+							token).ConfigureAwait(false);
 
-                        if (!this.IsDisposed && this.IsHandleCreated)
-                        {
-                            this.BeginInvoke(new Action(() =>
-                            {
-                                var old = this.pictureBox_cores.Image;
-                                this.pictureBox_cores.Image = bmp;
-                                old?.Dispose();
-                            }));
-                        }
-                    }
+						if (!this.IsDisposed && this.IsHandleCreated)
+						{
+							this.BeginInvoke(new Action(() =>
+							{
+								var old = this.pictureBox_cores.Image;
+								this.pictureBox_cores.Image = bmp;
+								old?.Dispose();
+							}));
+						}
+					}
 
-                    await this.UpdateCudaStatistics().ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (Exception ex)
-                {
-                    CudaLog.Error(ex, "StatisticsTimer_Tick worker failed", "Stats");
-                }
-                finally
-                {
-                    Interlocked.Exchange(ref this._statsRunning, 0);
-                }
-            }, token);
-        }
+					await this.UpdateCudaStatistics().ConfigureAwait(false);
+				}
+				catch (OperationCanceledException)
+				{
+				}
+				catch (Exception ex)
+				{
+					CudaLog.Error(ex, "StatisticsTimer_Tick worker failed", "Stats");
+				}
+				finally
+				{
+					Interlocked.Exchange(ref this._statsRunning, 0);
+				}
+			}, token);
+		}
 
 
-        private void UpdateMemoryUiSafe()
+		private void UpdateMemoryUiSafe()
 		{
 			try
 			{
@@ -357,7 +357,7 @@ namespace LPAP.Forms
 				}
 				else if (elapsed < _samplingInterval && _lastUsages.Length == _cpuCounters.Length)
 				{
-					return Task.FromResult((float[])_lastUsages.Clone());
+					return Task.FromResult((float[]) _lastUsages.Clone());
 				}
 
 				int coreCount = _cpuCounters.Length;
@@ -369,21 +369,21 @@ namespace LPAP.Forms
 
 					float percent = _cpuCounters[i].NextValue();
 					if (percent < 0f)
-                    {
-                        percent = 0f;
-                    }
+					{
+						percent = 0f;
+					}
 
-                    if (percent > 100f)
-                    {
-                        percent = 100f;
-                    }
+					if (percent > 100f)
+					{
+						percent = 100f;
+					}
 
-                    usages[i] = percent / 100f;
+					usages[i] = percent / 100f;
 				}
 
 				_lastUsages = usages;
 				_lastSampleUtc = now;
-				return Task.FromResult((float[])usages.Clone());
+				return Task.FromResult((float[]) usages.Clone());
 			}
 		}
 

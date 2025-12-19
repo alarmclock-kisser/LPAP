@@ -165,7 +165,19 @@ namespace LPAP.Audio
 			return this.BeatsPerMinute;
 		}
 
-
+		public string GetMetaString(bool raw = false)
+		{
+			// List SampleRate, Channels, BitDepth, Length, SizeInMb (with Environment.NewLine if !raw)
+			StringBuilder sb = new StringBuilder();
+			string newLine = raw ? " | " : Environment.NewLine;
+			sb.Append($"SR: {this.SampleRate} Hz{newLine}");
+			sb.Append($"CH: {this.Channels}{newLine}");
+			sb.Append($"Bits: {this.BitDepth} bit{newLine}");
+			sb.Append(newLine);
+			sb.Append($"Length: {this.LengthSamples:0.##} f32{newLine}");
+			sb.Append($"Size: {this.SizeInMb:0.##} MB");
+			return sb.ToString();
+		}
 
 	}
 }

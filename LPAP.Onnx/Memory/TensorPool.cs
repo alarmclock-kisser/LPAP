@@ -7,8 +7,8 @@ namespace LPAP.Onnx.Memory;
 /// </summary>
 public sealed class TensorPool
 {
-    private readonly ArrayPool<float> _pool = ArrayPool<float>.Shared;
+	private readonly ArrayPool<float> _pool = ArrayPool<float>.Shared;
 
-    public float[] Rent(int length) => this._pool.Rent(length);
-    public void Return(float[] buffer, bool clear = false) => this._pool.Return(buffer, clearArray: clear);
+	public float[] Rent(int length) => this._pool.Rent(length);
+	public void Return(float[] buffer, bool clear = false) => this._pool.Return(buffer, clearArray: clear);
 }
