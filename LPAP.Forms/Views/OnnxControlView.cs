@@ -254,6 +254,7 @@ namespace LPAP.Forms.Views
 
 				// optional: show fixed frames for sanity
 				this.label_status.Text = $"ONNX Demucs initialized on [{deviceIndex}] OK. FixedT={this._model.FixedInputFrames.ToString() ?? "dynamic"}";
+				this.comboBox_devices.Enabled = false;
 			}
 			catch (Exception ex)
 			{
@@ -270,7 +271,6 @@ namespace LPAP.Forms.Views
 			}
 		}
 
-
 		private async void button_inference_Click(object sender, EventArgs e)
         {
             if (this._service is null)
@@ -280,8 +280,26 @@ namespace LPAP.Forms.Views
             }
 
             this.button_inference.Enabled = false;
+			this.button_inference.Text = "Cancel";
+			this.button_inference.BackColor = Color.IndianRed;
             this.button_initialize.Enabled = false;
-			this.comboBox_models.Enabled = false;
+			
+			Action cancelAction = new(() =>
+			{
+                try
+                {
+                    this._cts?.Cancel();
+                    this.button_inference.Enabled = false;
+                    this.button_inference.Text = "Stopping";
+                }
+                catch (Exception ex)
+				{
+					CudaLog.Error(ex, "Error while cancelling ONNX Demucs inference", "ONNX");
+				}
+            });
+            this.button_inference.Click += (_, __) => cancelAction();
+
+            this.comboBox_models.Enabled = false;
             this.progressBar_inferencing.Minimum = 0;
             this.progressBar_inferencing.Maximum = 100;
             this.progressBar_inferencing.Value = 0;
@@ -327,7 +345,7 @@ namespace LPAP.Forms.Views
 
                 var adapter = new LPAP.Forms.Adapters.DemucsAudioObjAdapter(this._service);
 
-				this._cts = new();
+                this._cts = new();
                 var (drums, bass, other, vocals) = await adapter.SeparateAsync(
                     this.Audio,
                     chunkSeconds: 6.0,
@@ -355,6 +373,9 @@ namespace LPAP.Forms.Views
             {
                 try { this._timeTimer.Stop(); } catch { }
                 this.button_inference.Enabled = true;
+                this.button_inference.Text = "Inference";
+				this.button_inference.Click -= (_, __) => cancelAction();
+                this.button_inference.BackColor = SystemColors.ControlText;
                 this.button_initialize.Enabled = true;
 				this.comboBox_models.Enabled = true;
 
@@ -364,6 +385,7 @@ namespace LPAP.Forms.Views
 			CudaLog.Info($"ONNX Demucs inference finished ({(DateTime.UtcNow - this._inferStarted.Value).TotalSeconds:F1} sec. elapsed)", "", "ONNX");
 			WindowMain.MsgBox_ShowLastCudaSession(true);
 		}
+
 
 		private void OnnxControlView_FormClosing(object? sender, FormClosingEventArgs e)
 		{

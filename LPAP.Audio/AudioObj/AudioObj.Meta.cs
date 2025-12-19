@@ -168,7 +168,7 @@ namespace LPAP.Audio
 		public string GetMetaString(bool raw = false)
 		{
 			// List SampleRate, Channels, BitDepth, Length, SizeInMb (with Environment.NewLine if !raw)
-			StringBuilder sb = new StringBuilder();
+			StringBuilder sb = new();
 			string newLine = raw ? " | " : Environment.NewLine;
 			sb.Append($"SR: {this.SampleRate} Hz{newLine}");
 			sb.Append($"CH: {this.Channels}{newLine}");

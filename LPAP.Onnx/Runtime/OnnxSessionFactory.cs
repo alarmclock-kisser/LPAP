@@ -30,9 +30,10 @@ public static class OnnxSessionFactory
 			// This method exists in the ORT GPU package for Windows.
 			so.AppendExecutionProvider_CUDA(deviceId);
 		}
-		catch
+		catch (Exception ex)
 		{
-			// If CUDA EP is unavailable/misconfigured, silently fall back to CPU.
+			// If CUDA EP is unavailable/misconfigured, log and fall back to CPU.
+			Console.WriteLine($"ONNX: CUDA provider unavailable on device {deviceId}: {ex.Message}. Falling back to CPU.");
 		}
 	}
 }
