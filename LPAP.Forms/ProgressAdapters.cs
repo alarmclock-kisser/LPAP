@@ -54,7 +54,7 @@ public static class ProgressAdapters
 
 			if (bar.InvokeRequired)
 			{
-				bar.BeginInvoke((Action) Apply);
+				bar.BeginInvoke(Apply);
 			}
 			else
 			{

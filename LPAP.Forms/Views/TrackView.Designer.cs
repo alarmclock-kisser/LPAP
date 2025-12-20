@@ -46,9 +46,6 @@
 			this.trimSilenceToolStripMenuItem = new ToolStripMenuItem();
 			this.drawBeatGridToolStripMenuItem = new ToolStripMenuItem();
 			this.timeStretchToolStripMenuItem = new ToolStripMenuItem();
-			this.v1ToolStripMenuItem = new ToolStripMenuItem();
-			this.v2ToolStripMenuItem = new ToolStripMenuItem();
-			this.v3ToolStripMenuItem = new ToolStripMenuItem();
 			this.hScrollBar_offset = new HScrollBar();
 			this.label_volume = new Label();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_waveform).BeginInit();
@@ -137,92 +134,71 @@
 			// 
 			this.contextMenuStrip_waveform.Items.AddRange(new ToolStripItem[] { this.applyToolStripMenuItem, this.copyToolStripMenuItem, this.removeToolStripMenuItem, this.normalizeToolStripMenuItem, this.fadeInToolStripMenuItem, this.fadeOutToolStripMenuItem, this.trimSilenceToolStripMenuItem, this.drawBeatGridToolStripMenuItem, this.timeStretchToolStripMenuItem });
 			this.contextMenuStrip_waveform.Name = "contextMenuStrip_waveform";
-			this.contextMenuStrip_waveform.Size = new Size(169, 202);
+			this.contextMenuStrip_waveform.Size = new Size(181, 224);
 			this.contextMenuStrip_waveform.Text = "Actions";
 			// 
 			// applyToolStripMenuItem
 			// 
 			this.applyToolStripMenuItem.Name = "applyToolStripMenuItem";
-			this.applyToolStripMenuItem.Size = new Size(168, 22);
+			this.applyToolStripMenuItem.Size = new Size(180, 22);
 			this.applyToolStripMenuItem.Text = "Apply";
 			this.applyToolStripMenuItem.Click += this.applyToolStripMenuItem_Click;
 			// 
 			// copyToolStripMenuItem
 			// 
 			this.copyToolStripMenuItem.Name = "copyToolStripMenuItem";
-			this.copyToolStripMenuItem.Size = new Size(168, 22);
+			this.copyToolStripMenuItem.Size = new Size(180, 22);
 			this.copyToolStripMenuItem.Text = "Copy Selection";
 			this.copyToolStripMenuItem.Click += this.copyToolStripMenuItem_Click;
 			// 
 			// removeToolStripMenuItem
 			// 
 			this.removeToolStripMenuItem.Name = "removeToolStripMenuItem";
-			this.removeToolStripMenuItem.Size = new Size(168, 22);
+			this.removeToolStripMenuItem.Size = new Size(180, 22);
 			this.removeToolStripMenuItem.Text = "Remove Selection";
 			this.removeToolStripMenuItem.Click += this.removeToolStripMenuItem_Click;
 			// 
 			// normalizeToolStripMenuItem
 			// 
 			this.normalizeToolStripMenuItem.Name = "normalizeToolStripMenuItem";
-			this.normalizeToolStripMenuItem.Size = new Size(168, 22);
+			this.normalizeToolStripMenuItem.Size = new Size(180, 22);
 			this.normalizeToolStripMenuItem.Text = "Normalize...";
 			this.normalizeToolStripMenuItem.Click += this.normalizeToolStripMenuItem_Click;
 			// 
 			// fadeInToolStripMenuItem
 			// 
 			this.fadeInToolStripMenuItem.Name = "fadeInToolStripMenuItem";
-			this.fadeInToolStripMenuItem.Size = new Size(168, 22);
+			this.fadeInToolStripMenuItem.Size = new Size(180, 22);
 			this.fadeInToolStripMenuItem.Text = "Fade In...";
 			this.fadeInToolStripMenuItem.Click += this.fadeInToolStripMenuItem_Click;
 			// 
 			// fadeOutToolStripMenuItem
 			// 
 			this.fadeOutToolStripMenuItem.Name = "fadeOutToolStripMenuItem";
-			this.fadeOutToolStripMenuItem.Size = new Size(168, 22);
+			this.fadeOutToolStripMenuItem.Size = new Size(180, 22);
 			this.fadeOutToolStripMenuItem.Text = "Fade Out...";
 			this.fadeOutToolStripMenuItem.Click += this.fadeOutToolStripMenuItem_Click;
 			// 
 			// trimSilenceToolStripMenuItem
 			// 
 			this.trimSilenceToolStripMenuItem.Name = "trimSilenceToolStripMenuItem";
-			this.trimSilenceToolStripMenuItem.Size = new Size(168, 22);
+			this.trimSilenceToolStripMenuItem.Size = new Size(180, 22);
 			this.trimSilenceToolStripMenuItem.Text = "Trim Silence...";
 			// 
 			// drawBeatGridToolStripMenuItem
 			// 
 			this.drawBeatGridToolStripMenuItem.CheckOnClick = true;
 			this.drawBeatGridToolStripMenuItem.Name = "drawBeatGridToolStripMenuItem";
-			this.drawBeatGridToolStripMenuItem.Size = new Size(168, 22);
+			this.drawBeatGridToolStripMenuItem.Size = new Size(180, 22);
 			this.drawBeatGridToolStripMenuItem.Text = "Draw Beat Grid";
 			this.drawBeatGridToolStripMenuItem.CheckStateChanged += this.drawBeatGridToolStripMenuItem_CheckStateChanged;
 			// 
 			// timeStretchToolStripMenuItem
 			// 
-			this.timeStretchToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.v1ToolStripMenuItem, this.v2ToolStripMenuItem, this.v3ToolStripMenuItem });
 			this.timeStretchToolStripMenuItem.Name = "timeStretchToolStripMenuItem";
-			this.timeStretchToolStripMenuItem.Size = new Size(168, 22);
-			this.timeStretchToolStripMenuItem.Text = "Time Stretch";
-			// 
-			// v1ToolStripMenuItem
-			// 
-			this.v1ToolStripMenuItem.Name = "v1ToolStripMenuItem";
-			this.v1ToolStripMenuItem.Size = new Size(215, 22);
-			this.v1ToolStripMenuItem.Text = "V1: Default Quality (fast)";
-			this.v1ToolStripMenuItem.Click += this.v1ToolStripMenuItem_Click;
-			// 
-			// v2ToolStripMenuItem
-			// 
-			this.v2ToolStripMenuItem.Name = "v2ToolStripMenuItem";
-			this.v2ToolStripMenuItem.Size = new Size(215, 22);
-			this.v2ToolStripMenuItem.Text = "V2: Phase Vocoder (slower)";
-			this.v2ToolStripMenuItem.Click += this.v2ToolStripMenuItem_Click;
-			// 
-			// v3ToolStripMenuItem
-			// 
-			this.v3ToolStripMenuItem.Name = "v3ToolStripMenuItem";
-			this.v3ToolStripMenuItem.Size = new Size(215, 22);
-			this.v3ToolStripMenuItem.Text = "V3: ";
-			this.v3ToolStripMenuItem.Click += this.v3ToolStripMenuItem_Click;
+			this.timeStretchToolStripMenuItem.Size = new Size(180, 22);
+			this.timeStretchToolStripMenuItem.Text = "Time Stretch...";
+			this.timeStretchToolStripMenuItem.Click += this.timeStretchToolStripMenuItem_Click;
 			// 
 			// hScrollBar_offset
 			// 
@@ -287,9 +263,6 @@
         private ToolStripMenuItem trimSilenceToolStripMenuItem;
         private ToolStripMenuItem drawBeatGridToolStripMenuItem;
         private ToolStripMenuItem timeStretchToolStripMenuItem;
-        private ToolStripMenuItem v1ToolStripMenuItem;
-        private ToolStripMenuItem v2ToolStripMenuItem;
-        private ToolStripMenuItem v3ToolStripMenuItem;
 		private Label label_volume;
 		private ToolStripMenuItem applyToolStripMenuItem;
 	}

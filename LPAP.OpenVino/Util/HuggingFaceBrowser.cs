@@ -23,14 +23,14 @@ namespace LPAP.OpenVino.Util
 			this._http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("LPAP.OpenVino", "1.0"));
 		}
 
-        public async Task<IReadOnlyList<HfModelSearchResult>> SearchModelsAsync(
-            string? search = null,
-            bool onlyAudioSourceSeparation = true,
-            int limit = 50,
-            string sort = "downloads",
-            int direction = -1,
-            string[]? extensions = null,
-            CancellationToken ct = default)
+		public async Task<IReadOnlyList<HfModelSearchResult>> SearchModelsAsync(
+			string? search = null,
+			bool onlyAudioSourceSeparation = true,
+			int limit = 50,
+			string sort = "downloads",
+			int direction = -1,
+			string[]? extensions = null,
+			CancellationToken ct = default)
 		{
 			limit = Math.Clamp(limit, 1, 200);
 
@@ -59,50 +59,50 @@ namespace LPAP.OpenVino.Util
 			resp.EnsureSuccessStatusCode();
 
 			await using var s = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            var data = await JsonSerializer.DeserializeAsync<List<HfModelSearchResult>>(s, JsonOpts, ct).ConfigureAwait(false);
+			var data = await JsonSerializer.DeserializeAsync<List<HfModelSearchResult>>(s, JsonOpts, ct).ConfigureAwait(false);
 
-            var results = data ?? [];
+			var results = data ?? [];
 
-            // Optional filter by extensions present in repo files
-            if (extensions is { Length: > 0 })
-            {
-                var exts = extensions
-                    .Where(e => !string.IsNullOrWhiteSpace(e))
-                    .Select(e => e.StartsWith('.') ? e : "." + e)
-                    .Select(e => e.ToLowerInvariant())
-                    .ToArray();
+			// Optional filter by extensions present in repo files
+			if (extensions is { Length: > 0 })
+			{
+				var exts = extensions
+					.Where(e => !string.IsNullOrWhiteSpace(e))
+					.Select(e => e.StartsWith('.') ? e : "." + e)
+					.Select(e => e.ToLowerInvariant())
+					.ToArray();
 
-                var filtered = new List<HfModelSearchResult>(results.Count);
-                foreach (var r in results)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var id = r.ModelId;
-                    if (string.IsNullOrWhiteSpace(id))
-                    {
-                        continue;
-                    }
+				var filtered = new List<HfModelSearchResult>(results.Count);
+				foreach (var r in results)
+				{
+					ct.ThrowIfCancellationRequested();
+					var id = r.ModelId;
+					if (string.IsNullOrWhiteSpace(id))
+					{
+						continue;
+					}
 
-                    try
-                    {
-                        var files = await this.GetModelFilesAsync(id!, ct).ConfigureAwait(false);
-                        bool match = files.Any(f =>
-                            f?.RFilename is string rf &&
-                            exts.Any(ext => rf.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
-                        if (match)
-                        {
-                            filtered.Add(r);
-                        }
-                    }
-                    catch
-                    {
-                        // ignore failure, skip
-                    }
-                }
+					try
+					{
+						var files = await this.GetModelFilesAsync(id!, ct).ConfigureAwait(false);
+						bool match = files.Any(f =>
+							f?.RFilename is string rf &&
+							exts.Any(ext => rf.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
+						if (match)
+						{
+							filtered.Add(r);
+						}
+					}
+					catch
+					{
+						// ignore failure, skip
+					}
+				}
 
-                return filtered;
-            }
+				return filtered;
+			}
 
-            return results;
+			return results;
 		}
 
 		public async Task<HfModelInfo> GetModelInfoAsync(string repoId, CancellationToken ct = default)

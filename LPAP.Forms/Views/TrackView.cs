@@ -530,7 +530,7 @@ namespace LPAP.Forms.Views
 			int width = Math.Max(1, this.pictureBox_waveform.Width);
 			int localX = Math.Clamp(e.X, 0, width - 1);
 			long samplesPerPixel = (long) this.SamplesPerPixel * Math.Max(1, this.Audio.Channels);
-			long targetSample = this._viewOffsetSamples + (long) localX * samplesPerPixel;
+			long targetSample = this._viewOffsetSamples + localX * samplesPerPixel;
 			targetSample = Math.Clamp(targetSample, 0, Math.Max(0, this.Audio.LengthSamples - 1));
 
 			// start selection, record mouse-down state; do NOT seek or set playback yet
@@ -553,7 +553,7 @@ namespace LPAP.Forms.Views
 			int width = Math.Max(1, this.pictureBox_waveform.Width);
 			int localX = Math.Clamp(e.X, 0, width - 1);
 			long spp = (long) this.SamplesPerPixel * Math.Max(1, this.Audio.Channels);
-			long sample = this._viewOffsetSamples + (long) localX * spp;
+			long sample = this._viewOffsetSamples + localX * spp;
 			sample = Math.Clamp(sample, 0, Math.Max(0, this.Audio.LengthSamples - 1));
 			this.Audio.SelectionEnd = sample;
 		}
@@ -973,20 +973,10 @@ namespace LPAP.Forms.Views
 			// TODO: implement later
 		}
 
-		private void v1ToolStripMenuItem_Click(object sender, EventArgs e)
+		private void timeStretchToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			var dlg = new TimeStretchDialog(this);
-			dlg.ShowDialog();
-		}
-
-		private void v2ToolStripMenuItem_Click(object sender, EventArgs e)
-		{
-			// TODO: implement later
-		}
-
-		private void v3ToolStripMenuItem_Click(object sender, EventArgs e)
-		{
-			// TODO: implement later
+			dlg.ShowDialog(this);
 		}
 
 		private void applyToolStripMenuItem_Click(object sender, EventArgs e)
@@ -1011,7 +1001,6 @@ namespace LPAP.Forms.Views
 		{
 			this.InitializeScrolling();
 		}
-
 
 
 	}

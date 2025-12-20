@@ -1,5 +1,6 @@
 ﻿using LPAP.Audio;
 using LPAP.Cuda;
+using LPAP.Forms.Views;
 using LPAP.Onnx.Demucs;
 using LPAP.Onnx.Runtime;
 using System;
@@ -14,9 +15,9 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
 
-namespace LPAP.Forms.Views
+namespace LPAP.Forms.Dialogs
 {
-	public partial class OnnxControlView : Form
+	public partial class OnnxDialog : Form
 	{
 		private const string DefaultModelPath = @"D:\Models";
 		private DemucsModel? _model;
@@ -37,7 +38,7 @@ namespace LPAP.Forms.Views
 		private int _totalSteps = 0;
 		private int _doneSteps = 0;
 
-		public OnnxControlView(AudioObj audio)
+		public OnnxDialog(AudioObj audio)
 		{
 			this.InitializeComponent();
 			this.Audio = audio.Clone();
@@ -349,7 +350,7 @@ namespace LPAP.Forms.Views
 					if (this._inferStarted.HasValue && this._totalSteps > 0)
 					{
 						double nowSec = (DateTime.UtcNow - this._inferStarted.Value).TotalSeconds;
-						double p = Math.Clamp((double)this._doneSteps / this._totalSteps, 0.0, 1.0);
+						double p = Math.Clamp((double) this._doneSteps / this._totalSteps, 0.0, 1.0);
 						this._lastProgress01 = Math.Max(this._lastProgress01, p);
 						this._hadAnyProgress = this._hadAnyProgress || p > 0.0;
 						this.PushProgressSample(nowSec, p);

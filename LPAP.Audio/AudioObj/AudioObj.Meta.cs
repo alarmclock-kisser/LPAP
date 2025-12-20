@@ -77,7 +77,7 @@ namespace LPAP.Audio
 					using var file = TagLib.File.Create(this.FilePath);
 					if (file.Tag.BeatsPerMinute > 0)
 					{
-						roughBeatsPerMinute = (float) file.Tag.BeatsPerMinute;
+						roughBeatsPerMinute = file.Tag.BeatsPerMinute;
 					}
 					if (file.TagTypes.HasFlag(TagLib.TagTypes.Id3v2))
 					{
@@ -142,7 +142,7 @@ namespace LPAP.Audio
 					// Check for BPM in standard ID3v2 tag
 					if (file.Tag.BeatsPerMinute > 0)
 					{
-						bpm = (float) file.Tag.BeatsPerMinute;
+						bpm = file.Tag.BeatsPerMinute;
 					}
 					// Alternative für spezielle Tags (z.B. TBPM Frame)
 					else if (file.TagTypes.HasFlag(TagLib.TagTypes.Id3v2))
@@ -176,6 +176,10 @@ namespace LPAP.Audio
 			sb.Append(newLine);
 			sb.Append($"Length: {this.LengthSamples:0.##} f32{newLine}");
 			sb.Append($"Size: {this.SizeInMb:0.##} MB");
+			sb.Append(newLine);
+			double bpm = this.BeatsPerMinute > 1 ? this.BeatsPerMinute : this.ScannedBeatsPerMinute > 0 ? this.ScannedBeatsPerMinute : 0.0;
+			bool scanned = this.ScannedBeatsPerMinute > 0 && this.ScannedBeatsPerMinute != this.BeatsPerMinute;
+			sb.Append($"BPM: {bpm:0.##} bpm{(scanned ? " (scan)" : "")}{newLine}");
 			return sb.ToString();
 		}
 

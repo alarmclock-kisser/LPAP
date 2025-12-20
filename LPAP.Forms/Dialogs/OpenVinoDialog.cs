@@ -373,7 +373,10 @@ namespace LPAP.Forms.Dialogs
 		private static string FormatTime(double seconds)
 		{
 			if (seconds < 60.0)
+			{
 				return seconds.ToString("F2") + "s";
+			}
+
 			var ts = TimeSpan.FromSeconds(seconds);
 			return ts.Minutes + "m " + ts.Seconds + "s";
 		}
@@ -438,8 +441,14 @@ namespace LPAP.Forms.Dialogs
 
 			if (double.IsFinite(mbPerSec) && mbPerSec > 0)
 			{
-				if (this._avgMbPerSec <= 0.01) this._avgMbPerSec = mbPerSec;
-				else this._avgMbPerSec = this._avgMbPerSec * 0.65 + mbPerSec * 0.35;
+				if (this._avgMbPerSec <= 0.01)
+				{
+					this._avgMbPerSec = mbPerSec;
+				}
+				else
+				{
+					this._avgMbPerSec = this._avgMbPerSec * 0.65 + mbPerSec * 0.35;
+				}
 			}
 		}
 
@@ -481,7 +490,7 @@ namespace LPAP.Forms.Dialogs
 			}
 
 			Clipboard.SetText(text);
-			CudaLog.Info("Copied model info to clipboard", "", "Huggingface" );
+			CudaLog.Info("Copied model info to clipboard", "", "Huggingface");
 		}
 	}
 }

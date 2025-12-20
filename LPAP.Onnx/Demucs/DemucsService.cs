@@ -51,17 +51,29 @@ namespace LPAP.Onnx.Demucs
 				{
 					this.LogLines.Add(line);
 					while (this.LogLines.Count > this.MaxLogLines)
+					{
 						this.LogLines.RemoveAt(0);
+					}
 				}
 			}
 
-			if (this._sync != null) this._sync.Post(_ => add(), null);
-			else add();
+			if (this._sync != null)
+			{
+				this._sync.Post(_ => add(), null);
+			}
+			else
+			{
+				add();
+			}
 		}
 
 		private IDisposable TimeScope(string name)
 		{
-			if (!this.EnableTimingLogs) return DummyDisposable.Instance;
+			if (!this.EnableTimingLogs)
+			{
+				return DummyDisposable.Instance;
+			}
+
 			var sw = Stopwatch.StartNew();
 			this.Log($"▶ {name}...");
 			return new ActionDisposable(() =>
@@ -86,11 +98,15 @@ namespace LPAP.Onnx.Demucs
 			CancellationToken ct = default)
 		{
 			if (channels != 2)
+			{
 				throw new InvalidOperationException("This implementation expects stereo input.");
+			}
 
 			int totalFrames = inputInterleaved.Length / channels;
 			if (totalFrames <= 0)
+			{
 				return Array.Empty<float[]>();
+			}
 
 			int segT =
 				this._model.FixedInputFrames <= 0
@@ -168,7 +184,9 @@ namespace LPAP.Onnx.Demucs
 
 				// Throttle segment logs to avoid flooding the UI
 				if (segIndex % 50 == 0)
+				{
 					this.Log($"Segment {segIndex + 1}/{segCount} (startFrame={startFrame}, framesThis={framesThis})");
+				}
 
 				float[][] segStems = await this._model
 					.SeparateAsync(seg, sampleRate, channels, progress: null, ct)
@@ -203,7 +221,7 @@ namespace LPAP.Onnx.Demucs
 				}
 
 				segIndex++;
-				progress?.Report(segIndex / (float)segCount);
+				progress?.Report(segIndex / (float) segCount);
 			}
 
 			// Normalize by accumulated window weights (proper overlap-add)

@@ -1955,20 +1955,20 @@ namespace LPAP.Cuda
 
 			channelCode = channelCode.Trim().ToUpperInvariant();
 
-			return Task.Run(() =>
+			return Task.Run<Image?>(() =>
 			{
 				ct.ThrowIfCancellationRequested();
 
 				int channels = channelCode.Length;
 				if (channels is not (1 or 3 or 4))
 				{
-					return (Image?) null;
+					return null;
 				}
 
 				long expected = (long) width * height * channels;
 				if (data.LongLength != expected)
 				{
-					return (Image?) null;
+					return null;
 				}
 
 				PixelFormat pf = channels switch
@@ -2064,7 +2064,7 @@ namespace LPAP.Cuda
 						bmp.UnlockBits(bd);
 					}
 
-					return (Image) bmp;
+					return bmp;
 				}
 				catch
 				{

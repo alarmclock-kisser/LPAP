@@ -637,18 +637,29 @@ namespace LPAP.Onnx.Demucs
 	out float inputPeak)
 		{
 			int framesIn = interleaved.Length / channels;
-			if (framesIn <= 0) throw new InvalidOperationException("No samples.");
+			if (framesIn <= 0)
+			{
+				throw new InvalidOperationException("No samples.");
+			}
 
 			// peak nur fürs Logging
 			inputPeak = 0f;
 			int scanStep = Math.Max(1, interleaved.Length / 131072);
 			for (int i = 0; i < interleaved.Length; i += scanStep)
+			{
 				inputPeak = Math.Max(inputPeak, MathF.Abs(interleaved[i]));
-			if (inputPeak <= 0f) inputPeak = 1f;
+			}
+
+			if (inputPeak <= 0f)
+			{
+				inputPeak = 1f;
+			}
 
 			float scale = 1f;
 			if (enablePeakNormalize && inputPeak > 1.2f)
+			{
 				scale = 1f / inputPeak;
+			}
 
 			var planar = new float[channels * fixedT];
 
@@ -661,7 +672,9 @@ namespace LPAP.Onnx.Demucs
 				int srcBase = srcFrame * channels;
 
 				for (int c = 0; c < channels; c++)
+				{
 					planar[c * fixedT + t] = interleaved[srcBase + c] * scale;
+				}
 			}
 			return planar;
 		}

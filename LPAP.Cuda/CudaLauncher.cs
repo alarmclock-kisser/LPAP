@@ -271,10 +271,10 @@ namespace LPAP.Cuda
 			{
 				return inputDataType.ToLowerInvariant() switch
 				{
-					"byte" or "bytes" or "uint8" => this._register.PushData((IEnumerable<byte>) inputData.Cast<byte>()),
-					"int" or "int32" => this._register.PushData((IEnumerable<int>) inputData.Cast<int>()),
-					"float" or "single" => this._register.PushData((IEnumerable<float>) inputData.Cast<float>()),
-					"double" => this._register.PushData((IEnumerable<double>) inputData.Cast<double>()),
+					"byte" or "bytes" or "uint8" => this._register.PushData(inputData.Cast<byte>()),
+					"int" or "int32" => this._register.PushData(inputData.Cast<int>()),
+					"float" or "single" => this._register.PushData(inputData.Cast<float>()),
+					"double" => this._register.PushData(inputData.Cast<double>()),
 					_ => null
 				};
 			}
@@ -295,12 +295,12 @@ namespace LPAP.Cuda
 				case 2:
 					kernel.BlockDimensions = new dim3(16, 16, 1);
 					uint width = (uint) Math.Ceiling(Math.Sqrt(totalElements));
-					kernel.GridDimensions = new dim3((uint) ((width + 15) / 16), (uint) ((width + 15) / 16), 1);
+					kernel.GridDimensions = new dim3((width + 15) / 16, (width + 15) / 16, 1);
 					break;
 				default:
 					kernel.BlockDimensions = new dim3(8, 8, 8);
 					uint edge = (uint) Math.Ceiling(Math.Pow(totalElements, 1.0 / 3.0));
-					kernel.GridDimensions = new dim3((uint) ((edge + 7) / 8), (uint) ((edge + 7) / 8), (uint) ((edge + 7) / 8));
+					kernel.GridDimensions = new dim3((edge + 7) / 8, (edge + 7) / 8, (edge + 7) / 8);
 					break;
 			}
 		}
@@ -496,7 +496,7 @@ namespace LPAP.Cuda
 			kernel.BlockDimensions = new dim3(256, 1, 1);
 			kernel.GridDimensions = new dim3((uint) ((chunkSize * channels + 255) / 256), 1, 1);
 
-			var temp = this._register.AllocateSingle<float2>((IntPtr) chunkSize);
+			var temp = this._register.AllocateSingle<float2>(chunkSize);
 			if (temp == null)
 			{
 				return fftMem.IndexPointer;

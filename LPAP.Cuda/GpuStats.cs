@@ -149,9 +149,9 @@ public sealed class GpuStats : IDisposable
 			uint? mw = NvmlGpu.TryGetGpuPowerMilliwatts(this.DeviceIndex);
 
 			Volatile.Write(ref this._currentLoad01, util01);
-			Volatile.Write(ref this._currentPowerMilliwatts, mw.HasValue ? (long) mw.Value : -1);
+			Volatile.Write(ref this._currentPowerMilliwatts, mw.HasValue ? mw.Value : -1);
 
-			var s = new Sample(now, util01, mw.HasValue ? mw.Value / 1000.0 : (double?) null);
+			var s = new Sample(now, util01, mw.HasValue ? mw.Value / 1000.0 : null);
 
 			lock (this._stateLock)
 			{

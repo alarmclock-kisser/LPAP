@@ -1,6 +1,6 @@
-﻿namespace LPAP.Forms.Views
+﻿namespace LPAP.Forms.Dialogs
 {
-    partial class OnnxControlView
+    partial class OnnxDialog
     {
         /// <summary>
         /// Required designer variable.

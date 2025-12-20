@@ -598,10 +598,10 @@ namespace LPAP.Forms.Views
 				try
 				{
 					// BeginInvoke stellt sicher, dass das auslösende Event komplettExecuted
-					this.BeginInvoke((Action) (() =>
+					this.BeginInvoke(() =>
 					{
 						try { this.CurrentTrackView?.Focus(); } catch { }
-					}));
+					});
 				}
 				catch { }
 			}

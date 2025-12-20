@@ -458,7 +458,7 @@ namespace LPAP.Audio
 			this.SampleRate = source.SampleRate;
 			this.Channels = source.Channels;
 			this.BitDepth = source.BitDepth;
-			this.Data = source.Data != null ? (float[]) source.Data.Clone() : [];
+			this.Data = source.Data.Clone() as float[] ?? [];
 			this.DataChanged();
 		}
 

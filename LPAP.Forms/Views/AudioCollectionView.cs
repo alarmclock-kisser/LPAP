@@ -764,7 +764,7 @@ namespace LPAP.Forms.Views
 				return;
 			}
 
-			var dlg = new OnnxControlView(selected.First());
+			var dlg = new OnnxDialog(selected.First());
 			dlg.ShowDialog(this);
 		}
 
@@ -923,6 +923,18 @@ namespace LPAP.Forms.Views
 			this.Cursor = cur;
 			CudaLog.Info("Rechanneling completed.", null, "AudioObj");
 			WindowMain.UpdateTrackDependentUi();
+		}
+
+		private void timeStretchToolStripMenuItem_Click(object sender, EventArgs e)
+		{
+			var selected = this.GetSelectedAudioItems();
+			if (selected.Count <= 0)
+			{
+				return;
+			}
+
+			var dlg = new TimeStretchDialog(null, selected);
+			dlg.Show();
 		}
 
 		private void deleteToolStripMenuItem_Click(object sender, EventArgs e)
