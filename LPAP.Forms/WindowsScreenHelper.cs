@@ -113,9 +113,9 @@ namespace LPAP.Forms
 			{
 				return null;
 			}
-        }
+		}
 
-        internal static Point GetWindowScreenPosition(Form window, IEnumerable<AnchorStyles>? anchors = null)
+		internal static Point GetWindowScreenPosition(Form window, IEnumerable<AnchorStyles>? anchors = null)
 		{
 			anchors ??= []; // Empty means centered
 

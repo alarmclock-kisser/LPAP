@@ -312,14 +312,14 @@ namespace LPAP.Audio.Processing
 					}
 
 					string filePath = System.IO.Path.Combine(tempDir, index.ToString("D6") + ".bin");
-					using (var fs = new System.IO.FileStream(
+					using (var fs = new FileStream(
 							   filePath,
 							   System.IO.FileMode.Create,
 							   System.IO.FileAccess.Write,
 							   System.IO.FileShare.None,
 							   4096,
 							   System.IO.FileOptions.SequentialScan))
-					using (var bw = new System.IO.BinaryWriter(fs, Encoding.UTF8, false))
+					using (var bw = new BinaryWriter(fs, Encoding.UTF8, false))
 					{
 						bw.Write(ifft.Length);
 						for (int i = 0; i < ifft.Length; i++)
@@ -351,14 +351,14 @@ namespace LPAP.Audio.Processing
 
 				foreach (var path in tempFiles)
 				{
-					using (var fs = new System.IO.FileStream(
+					using (var fs = new FileStream(
 							   path,
 							   System.IO.FileMode.Open,
 							   System.IO.FileAccess.Read,
 							   System.IO.FileShare.Read,
 							   4096,
 							   System.IO.FileOptions.SequentialScan))
-					using (var br = new System.IO.BinaryReader(fs, Encoding.UTF8, false))
+					using (var br = new BinaryReader(fs, Encoding.UTF8, false))
 					{
 						int len = br.ReadInt32();
 						if (len <= 0)

@@ -19,28 +19,28 @@ namespace LPAP.Audio
 
 		public string Name { get; set; } = string.Empty;
 		public string? FilePath { get; private set; }
-        private float[] _data = [];
-        public float[] Data
-        {
-            get => this._data;
-            set
-            {
-                this._data = value;
-                this.DataChanged();
-            }
-        }
+		private float[] _data = [];
+		public float[] Data
+		{
+			get => this._data;
+			set
+			{
+				this._data = value;
+				this.DataChanged();
+			}
+		}
 		public int _sampleRate;
-        public int SampleRate
+		public int SampleRate
 		{
 			get => this._sampleRate;
-            set 
+			set
 			{
 				this._sampleRate = value;
 				this.OnPropertyChanged(nameof(this.SampleRate));
-            }
-        }
+			}
+		}
 		public int Channels { get; set; }
-		public int BitDepth { get; internal set; }
+		public int BitDepth { get; set; }
 		public long StartingSample { get; set; }
 
 		public long LengthSamples => this.Data?.LongLength ?? 0;

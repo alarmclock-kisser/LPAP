@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<PlatformTarget>x64</PlatformTarget>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<NoWarn>NU1701</NoWarn>
+	</PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenVINO.CSharp.API" Version="2025.3.0.1" />
+    <PackageReference Include="OpenVINO.runtime.win" Version="2025.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LPAP.Audio\LPAP.Audio.csproj" />
+  </ItemGroup>
+
+</Project>

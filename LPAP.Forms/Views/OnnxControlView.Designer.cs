@@ -36,6 +36,7 @@
 			this.progressBar_inferencing = new ProgressBar();
 			this.label_steps = new Label();
 			this.label_elapsed = new Label();
+			this.listBox_log = new ListBox();
 			this.SuspendLayout();
 			// 
 			// comboBox_devices
@@ -111,11 +112,22 @@
 			this.label_elapsed.TabIndex = 7;
 			this.label_elapsed.Text = "Elapsed: - / ~- s";
 			// 
+			// listBox_log
+			// 
+			this.listBox_log.FormattingEnabled = true;
+			this.listBox_log.HorizontalScrollbar = true;
+			this.listBox_log.Location = new Point(12, 91);
+			this.listBox_log.Name = "listBox_log";
+			this.listBox_log.Size = new Size(380, 139);
+			this.listBox_log.TabIndex = 8;
+			this.listBox_log.MouseDoubleClick += this.listBox_log_MouseDoubleClick;
+			// 
 			// OnnxControlView
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(404, 301);
+			this.Controls.Add(this.listBox_log);
 			this.Controls.Add(this.label_elapsed);
 			this.Controls.Add(this.label_steps);
 			this.Controls.Add(this.progressBar_inferencing);
@@ -140,5 +152,6 @@
         private ProgressBar progressBar_inferencing;
 		private Label label_steps;
 		private Label label_elapsed;
+		private ListBox listBox_log;
 	}
 }

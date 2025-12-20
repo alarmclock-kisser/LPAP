@@ -7,88 +7,88 @@ using System.Reflection;
 
 namespace LPAP.Cuda
 {
-    public static partial class NvencVideoRenderer
-    {
-        public sealed record PresetEntry(string Name, NvencOptions Options)
-        {
-            public string DisplayName { get; } = ExtractDisplayName(Name, true);
+	public static partial class NvencVideoRenderer
+	{
+		public sealed record PresetEntry(string Name, NvencOptions Options)
+		{
+			public string DisplayName { get; } = ExtractDisplayName(Name, true);
 
-            public override string ToString() => this.DisplayName;
+			public override string ToString() => this.DisplayName;
 
-            private static string ExtractDisplayName(string name, bool toUpper = false)
-            {
-                if (string.IsNullOrWhiteSpace(name))
-                {
-                    return string.Empty;
-                }
+			private static string ExtractDisplayName(string name, bool toUpper = false)
+			{
+				if (string.IsNullOrWhiteSpace(name))
+				{
+					return string.Empty;
+				}
 
-                var parts = name.Split('.', StringSplitOptions.RemoveEmptyEntries);
-                string displayName = parts.Length > 0 ? parts[^1] : name;
-                return toUpper ? displayName.ToUpperInvariant() : displayName;
-            }
-        }
+				var parts = name.Split('.', StringSplitOptions.RemoveEmptyEntries);
+				string displayName = parts.Length > 0 ? parts[^1] : name;
+				return toUpper ? displayName.ToUpperInvariant() : displayName;
+			}
+		}
 
-        public static BindingList<PresetEntry> GetAllPresetEntries(bool showCudaCodecs = true)
-        {
-            var entries = new List<PresetEntry>();
+		public static BindingList<PresetEntry> GetAllPresetEntries(bool showCudaCodecs = true)
+		{
+			var entries = new List<PresetEntry>();
 
-            void AddFromType(Type t)
-            {
-                const BindingFlags flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy;
+			void AddFromType(Type t)
+			{
+				const BindingFlags flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy;
 
-                foreach (var p in t.GetProperties(flags))
-                {
-                    if (p.PropertyType != typeof(NvencOptions) || p.GetMethod is null)
-                    {
-                        continue;
-                    }
+				foreach (var p in t.GetProperties(flags))
+				{
+					if (p.PropertyType != typeof(NvencOptions) || p.GetMethod is null)
+					{
+						continue;
+					}
 
-                    if (p.GetValue(null) is NvencOptions val)
-                    {
-                        entries.Add(new PresetEntry($"{t.Name}.{p.Name}", val));
-                    }
-                }
+					if (p.GetValue(null) is NvencOptions val)
+					{
+						entries.Add(new PresetEntry($"{t.Name}.{p.Name}", val));
+					}
+				}
 
-                foreach (var f in t.GetFields(flags))
-                {
-                    if (f.FieldType != typeof(NvencOptions))
-                    {
-                        continue;
-                    }
+				foreach (var f in t.GetFields(flags))
+				{
+					if (f.FieldType != typeof(NvencOptions))
+					{
+						continue;
+					}
 
-                    if (f.GetValue(null) is NvencOptions val)
-                    {
-                        entries.Add(new PresetEntry($"{t.Name}.{f.Name}", val));
-                    }
-                }
-            }
+					if (f.GetValue(null) is NvencOptions val)
+					{
+						entries.Add(new PresetEntry($"{t.Name}.{f.Name}", val));
+					}
+				}
+			}
 
-            var root = typeof(NvencVideoRenderer);
-            AddFromType(root);
+			var root = typeof(NvencVideoRenderer);
+			AddFromType(root);
 
-            foreach (var nt in root.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
-            {
-                AddFromType(nt);
-            }
+			foreach (var nt in root.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+			{
+				AddFromType(nt);
+			}
 
-            entries = entries
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+			entries = entries
+				.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+				.ToList();
 
-            if (!showCudaCodecs)
-            {
-                entries = entries
-                    .Where(e => !e.Options.VideoCodec.Contains("nv", StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            }
+			if (!showCudaCodecs)
+			{
+				entries = entries
+					.Where(e => !e.Options.VideoCodec.Contains("nv", StringComparison.OrdinalIgnoreCase))
+					.ToList();
+			}
 
-            return new BindingList<PresetEntry>(entries);
-        }
+			return new BindingList<PresetEntry>(entries);
+		}
 
-        public static BindingList<NvencOptions> GetAllPresetOptions()
-        {
-            var list = GetAllPresetEntries().Select(e => e.Options).ToList();
-            return new BindingList<NvencOptions>(list);
-        }
-    }
+		public static BindingList<NvencOptions> GetAllPresetOptions()
+		{
+			var list = GetAllPresetEntries().Select(e => e.Options).ToList();
+			return new BindingList<NvencOptions>(list);
+		}
+	}
 }

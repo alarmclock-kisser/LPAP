@@ -294,7 +294,7 @@ namespace LPAP.Forms.Dialogs
 				uiProgressBase.Report(p);
 			});
 
-			var enc = ((NvencVideoRenderer.PresetEntry?) this.comboBox_codecPreset.SelectedItem)?.Options ?? NvencVideoRenderer.CpuPresets.X264_Default;
+			var enc = ((PresetEntry?) this.comboBox_codecPreset.SelectedItem)?.Options ?? NvencVideoRenderer.CpuPresets.X264_Default;
 			string mainAssemblyName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name?.Split('.').FirstOrDefault() ?? "NVENC";
 
 			try
@@ -389,18 +389,22 @@ namespace LPAP.Forms.Dialogs
 					_ => VisualizerMode.Waveform
 				};
 
-				ChannelReader<AudioProcessor.FramePacket> reader;
+				ChannelReader<FramePacket> reader;
 				int frameCount;
 
 				if (selectedPreset is null && selectedMode is null)
 				{
-					// OLD overload
+					// OLD overload // Please add params for graphColor, backColor, int thickness, float threshold
 					(reader, frameCount) = AudioProcessor.RenderVisualizerFramesBgraChannel(
 						audio,
 						width,
 						height,
 						frameRate,
 						amplification: uiAmp,
+						graphColor: this.button_colorGraph.BackColor,
+						backColor: this.button_backColor.BackColor,
+						thickness: (int) this.numericUpDown_thickness.Value,
+						threshold: (float) (this.numericUpDown_threshold.Value),
 						maxWorkers: this.MaxWorkers,
 						channelCapacity: 0,
 						progress: renderProgress,
@@ -607,7 +611,7 @@ namespace LPAP.Forms.Dialogs
 
 		private void button_codecInfo_Click(object sender, EventArgs e)
 		{
-			var preset = (NvencVideoRenderer.PresetEntry?) this.comboBox_codecPreset.SelectedItem;
+			var preset = (PresetEntry?) this.comboBox_codecPreset.SelectedItem;
 			if (preset == null)
 			{
 				MessageBox.Show("No preset selected.", "Preset Info", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -770,7 +774,7 @@ namespace LPAP.Forms.Dialogs
 
 			Size resolution = this.ParsedResolution;
 			double frameRate = (double) this.numericUpDown_frameRate.Value;
-			NvencOptions enc = ((NvencVideoRenderer.PresetEntry?) this.comboBox_codecPreset.SelectedItem)?.Options ?? NvencVideoRenderer.CpuPresets.X264_Default;
+			NvencOptions enc = ((PresetEntry?) this.comboBox_codecPreset.SelectedItem)?.Options ?? NvencVideoRenderer.CpuPresets.X264_Default;
 			VisualizerOptions? opts = this.comboBox_visPreset.SelectedItem is VisualizerPreset preset ? AudioProcessor.GetOptionsForPreset(preset) : null;
 			VisualizerMode? mode = (VisualizerMode?) this.comboBox_mode.SelectedItem;
 			float amp = (float) (this.numericUpDown_amplification.Value / 100.0m);
@@ -786,7 +790,7 @@ namespace LPAP.Forms.Dialogs
 				await selectionObj.NormalizeAsync((float) (this.numericUpDown_volume.Value / 100.0m)).ConfigureAwait(true);
 			}
 
-			var dlg = new VisualizerDialogPreview(selectionObj, resolution, frameRate, amp, enc, opts, mode);
+			var dlg = new VisualizerDialogPreview(selectionObj, resolution, frameRate, amp, this.button_colorGraph.BackColor, this.button_backColor.BackColor, (int) this.numericUpDown_thickness.Value, (float) this.numericUpDown_threshold.Value, enc, opts, mode);
 			dlg.ShowDialog(this);
 		}
 

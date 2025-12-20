@@ -58,6 +58,11 @@
 			this.numericUpDown_previewDuration = new NumericUpDown();
 			this.label_info_previewDuration = new Label();
 			this.button_backColor = new Button();
+			this.button_colorGraph = new Button();
+			this.label_info_thickness = new Label();
+			this.numericUpDown_thickness = new NumericUpDown();
+			this.label_info_threshold = new Label();
+			this.numericUpDown_threshold = new NumericUpDown();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_frameRate).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_startSeconds).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_endSeconds).BeginInit();
@@ -65,6 +70,8 @@
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_volume).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_amplification).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_previewDuration).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_thickness).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_threshold).BeginInit();
 			this.SuspendLayout();
 			// 
 			// button_render
@@ -121,7 +128,7 @@
 			// 
 			this.numericUpDown_startSeconds.DecimalPlaces = 2;
 			this.numericUpDown_startSeconds.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-			this.numericUpDown_startSeconds.Location = new Point(12, 141);
+			this.numericUpDown_startSeconds.Location = new Point(12, 317);
 			this.numericUpDown_startSeconds.Maximum = new decimal(new int[] { 999999, 0, 0, 0 });
 			this.numericUpDown_startSeconds.Name = "numericUpDown_startSeconds";
 			this.numericUpDown_startSeconds.Size = new Size(70, 23);
@@ -131,7 +138,7 @@
 			// label_info_startSeconds
 			// 
 			this.label_info_startSeconds.AutoSize = true;
-			this.label_info_startSeconds.Location = new Point(12, 123);
+			this.label_info_startSeconds.Location = new Point(12, 299);
 			this.label_info_startSeconds.Name = "label_info_startSeconds";
 			this.label_info_startSeconds.Size = new Size(54, 15);
 			this.label_info_startSeconds.TabIndex = 6;
@@ -140,7 +147,7 @@
 			// label_info_endSeconds
 			// 
 			this.label_info_endSeconds.AutoSize = true;
-			this.label_info_endSeconds.Location = new Point(88, 123);
+			this.label_info_endSeconds.Location = new Point(88, 299);
 			this.label_info_endSeconds.Name = "label_info_endSeconds";
 			this.label_info_endSeconds.Size = new Size(50, 15);
 			this.label_info_endSeconds.TabIndex = 8;
@@ -150,7 +157,7 @@
 			// 
 			this.numericUpDown_endSeconds.DecimalPlaces = 2;
 			this.numericUpDown_endSeconds.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-			this.numericUpDown_endSeconds.Location = new Point(88, 141);
+			this.numericUpDown_endSeconds.Location = new Point(88, 317);
 			this.numericUpDown_endSeconds.Maximum = new decimal(new int[] { 999999, 0, 0, 0 });
 			this.numericUpDown_endSeconds.Name = "numericUpDown_endSeconds";
 			this.numericUpDown_endSeconds.Size = new Size(70, 23);
@@ -210,7 +217,7 @@
 			// 
 			this.numericUpDown_volume.DecimalPlaces = 1;
 			this.numericUpDown_volume.ForeColor = Color.Gray;
-			this.numericUpDown_volume.Location = new Point(164, 141);
+			this.numericUpDown_volume.Location = new Point(164, 317);
 			this.numericUpDown_volume.Maximum = new decimal(new int[] { 150, 0, 0, 0 });
 			this.numericUpDown_volume.Name = "numericUpDown_volume";
 			this.numericUpDown_volume.Size = new Size(70, 23);
@@ -221,7 +228,7 @@
 			// label_info_volume
 			// 
 			this.label_info_volume.AutoSize = true;
-			this.label_info_volume.Location = new Point(164, 123);
+			this.label_info_volume.Location = new Point(164, 299);
 			this.label_info_volume.Name = "label_info_volume";
 			this.label_info_volume.Size = new Size(60, 15);
 			this.label_info_volume.TabIndex = 15;
@@ -230,7 +237,7 @@
 			// label_amplification
 			// 
 			this.label_amplification.AutoSize = true;
-			this.label_amplification.Location = new Point(382, 196);
+			this.label_amplification.Location = new Point(372, 270);
 			this.label_amplification.Name = "label_amplification";
 			this.label_amplification.Size = new Size(62, 15);
 			this.label_amplification.TabIndex = 17;
@@ -240,10 +247,10 @@
 			// 
 			this.numericUpDown_amplification.DecimalPlaces = 1;
 			this.numericUpDown_amplification.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-			this.numericUpDown_amplification.Location = new Point(382, 214);
+			this.numericUpDown_amplification.Location = new Point(372, 288);
 			this.numericUpDown_amplification.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
 			this.numericUpDown_amplification.Name = "numericUpDown_amplification";
-			this.numericUpDown_amplification.Size = new Size(70, 23);
+			this.numericUpDown_amplification.Size = new Size(80, 23);
 			this.numericUpDown_amplification.TabIndex = 16;
 			this.numericUpDown_amplification.Value = new decimal(new int[] { 541, 0, 0, 65536 });
 			// 
@@ -324,7 +331,7 @@
 			// 
 			// button_preview
 			// 
-			this.button_preview.Location = new Point(372, 243);
+			this.button_preview.Location = new Point(372, 317);
 			this.button_preview.Name = "button_preview";
 			this.button_preview.Size = new Size(80, 23);
 			this.button_preview.TabIndex = 26;
@@ -334,7 +341,7 @@
 			// 
 			// numericUpDown_previewDuration
 			// 
-			this.numericUpDown_previewDuration.Location = new Point(303, 243);
+			this.numericUpDown_previewDuration.Location = new Point(303, 317);
 			this.numericUpDown_previewDuration.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
 			this.numericUpDown_previewDuration.Minimum = new decimal(new int[] { 3, 0, 0, 0 });
 			this.numericUpDown_previewDuration.Name = "numericUpDown_previewDuration";
@@ -345,7 +352,7 @@
 			// label_info_previewDuration
 			// 
 			this.label_info_previewDuration.AutoSize = true;
-			this.label_info_previewDuration.Location = new Point(303, 225);
+			this.label_info_previewDuration.Location = new Point(303, 299);
 			this.label_info_previewDuration.Name = "label_info_previewDuration";
 			this.label_info_previewDuration.Size = new Size(53, 15);
 			this.label_info_previewDuration.TabIndex = 28;
@@ -356,19 +363,75 @@
 			this.button_backColor.BackColor = Color.Black;
 			this.button_backColor.Font = new Font("Bahnschrift Condensed", 9F, FontStyle.Regular, GraphicsUnit.Point,  0);
 			this.button_backColor.ForeColor = Color.White;
-			this.button_backColor.Location = new Point(222, 243);
+			this.button_backColor.Location = new Point(240, 317);
 			this.button_backColor.Name = "button_backColor";
-			this.button_backColor.Size = new Size(75, 23);
+			this.button_backColor.Size = new Size(57, 23);
 			this.button_backColor.TabIndex = 29;
-			this.button_backColor.Text = "Background";
+			this.button_backColor.Text = "Back";
 			this.button_backColor.UseVisualStyleBackColor = false;
 			this.button_backColor.Click += this.button_backColor_Click;
+			// 
+			// button_colorGraph
+			// 
+			this.button_colorGraph.BackColor = Color.White;
+			this.button_colorGraph.Font = new Font("Bahnschrift Condensed", 9F, FontStyle.Regular, GraphicsUnit.Point,  0);
+			this.button_colorGraph.ForeColor = SystemColors.ControlText;
+			this.button_colorGraph.Location = new Point(240, 288);
+			this.button_colorGraph.Name = "button_colorGraph";
+			this.button_colorGraph.Size = new Size(57, 23);
+			this.button_colorGraph.TabIndex = 30;
+			this.button_colorGraph.Text = "Graph";
+			this.button_colorGraph.UseVisualStyleBackColor = false;
+			// 
+			// label_info_thickness
+			// 
+			this.label_info_thickness.AutoSize = true;
+			this.label_info_thickness.Location = new Point(12, 244);
+			this.label_info_thickness.Name = "label_info_thickness";
+			this.label_info_thickness.Size = new Size(59, 15);
+			this.label_info_thickness.TabIndex = 32;
+			this.label_info_thickness.Text = "Thickness";
+			// 
+			// numericUpDown_thickness
+			// 
+			this.numericUpDown_thickness.Location = new Point(12, 262);
+			this.numericUpDown_thickness.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
+			this.numericUpDown_thickness.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+			this.numericUpDown_thickness.Name = "numericUpDown_thickness";
+			this.numericUpDown_thickness.Size = new Size(63, 23);
+			this.numericUpDown_thickness.TabIndex = 31;
+			this.numericUpDown_thickness.Value = new decimal(new int[] { 1, 0, 0, 0 });
+			// 
+			// label_info_threshold
+			// 
+			this.label_info_threshold.AutoSize = true;
+			this.label_info_threshold.Location = new Point(88, 244);
+			this.label_info_threshold.Name = "label_info_threshold";
+			this.label_info_threshold.Size = new Size(60, 15);
+			this.label_info_threshold.TabIndex = 34;
+			this.label_info_threshold.Text = "Threshold";
+			// 
+			// numericUpDown_threshold
+			// 
+			this.numericUpDown_threshold.DecimalPlaces = 5;
+			this.numericUpDown_threshold.Increment = new decimal(new int[] { 50, 0, 0, 327680 });
+			this.numericUpDown_threshold.Location = new Point(88, 262);
+			this.numericUpDown_threshold.Maximum = new decimal(new int[] { 9999, 0, 0, 262144 });
+			this.numericUpDown_threshold.Name = "numericUpDown_threshold";
+			this.numericUpDown_threshold.Size = new Size(63, 23);
+			this.numericUpDown_threshold.TabIndex = 33;
+			this.numericUpDown_threshold.Value = new decimal(new int[] { 50, 0, 0, 196608 });
 			// 
 			// VisualizerDialog
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(464, 441);
+			this.Controls.Add(this.label_info_threshold);
+			this.Controls.Add(this.numericUpDown_threshold);
+			this.Controls.Add(this.label_info_thickness);
+			this.Controls.Add(this.numericUpDown_thickness);
+			this.Controls.Add(this.button_colorGraph);
 			this.Controls.Add(this.button_backColor);
 			this.Controls.Add(this.label_info_previewDuration);
 			this.Controls.Add(this.numericUpDown_previewDuration);
@@ -410,6 +473,8 @@
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_volume).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_amplification).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_previewDuration).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_thickness).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_threshold).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -446,5 +511,10 @@
         private NumericUpDown numericUpDown_previewDuration;
         private Label label_info_previewDuration;
         private Button button_backColor;
-    }
+		private Button button_colorGraph;
+		private Label label_info_thickness;
+		private NumericUpDown numericUpDown_thickness;
+		private Label label_info_threshold;
+		private NumericUpDown numericUpDown_threshold;
+	}
 }

@@ -134,7 +134,7 @@ namespace LPAP.Audio
 
 		public static AudioObj CreateNewEmpty(int sampleRate = 44100, int channels = 2, int bitDepth = 32, double durationSeconds = 0.0)
 		{
-			float[] data = new float[(long)(sampleRate * channels * durationSeconds)];
+			float[] data = new float[(long) (sampleRate * channels * durationSeconds)];
 
 			var obj = new AudioObj()
 			{

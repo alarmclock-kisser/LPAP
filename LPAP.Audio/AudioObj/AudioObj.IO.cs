@@ -190,25 +190,25 @@ namespace LPAP.Audio
 
 			Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
 
-            await Task.Run(() =>
-            {
-                ct.ThrowIfCancellationRequested();
+			await Task.Run(() =>
+			{
+				ct.ThrowIfCancellationRequested();
 
-                var format = WaveFormat.CreateIeeeFloatWaveFormat(this.SampleRate, this.Channels);
-                var rawProvider = new ArraySampleProvider(this.Data, format);
-                var sampleToWave = new SampleToWaveProvider16(rawProvider);
+				var format = WaveFormat.CreateIeeeFloatWaveFormat(this.SampleRate, this.Channels);
+				var rawProvider = new ArraySampleProvider(this.Data, format);
+				var sampleToWave = new SampleToWaveProvider16(rawProvider);
 
-                WaveFileWriter.CreateWaveFile(outputPath, sampleToWave);
-            }, ct).ConfigureAwait(false);
-        }
+				WaveFileWriter.CreateWaveFile(outputPath, sampleToWave);
+			}, ct).ConfigureAwait(false);
+		}
 
-        // MP3-Export mit LAME
-        public async Task ExportMp3Async(string outputPath, int bitrateKbps = 192, CancellationToken ct = default)
-        {
-            if (this.Data == null || this.Data.Length == 0)
-            {
-                throw new InvalidOperationException("No audio data to export.");
-            }
+		// MP3-Export mit LAME
+		public async Task ExportMp3Async(string outputPath, int bitrateKbps = 192, CancellationToken ct = default)
+		{
+			if (this.Data == null || this.Data.Length == 0)
+			{
+				throw new InvalidOperationException("No audio data to export.");
+			}
 
 			Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
 

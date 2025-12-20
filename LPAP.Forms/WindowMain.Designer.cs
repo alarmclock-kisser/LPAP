@@ -182,7 +182,7 @@
 			// 
 			// listBox_cudaLog
 			// 
-			this.listBox_cudaLog.Font = new Font("Bahnschrift Condensed", 9F, FontStyle.Regular, GraphicsUnit.Point,  0);
+			this.listBox_cudaLog.Font = new Font("Bahnschrift SemiCondensed", 9F, FontStyle.Regular, GraphicsUnit.Point,  0);
 			this.listBox_cudaLog.FormattingEnabled = true;
 			this.listBox_cudaLog.Location = new Point(12, 41);
 			this.listBox_cudaLog.Name = "listBox_cudaLog";

@@ -1,6 +1,5 @@
 ﻿using LPAP.Audio;
 using LPAP.Cuda;
-using LPAP.Demucs;
 using LPAP.Onnx.Demucs;
 using LPAP.Onnx.Runtime;
 using System;
@@ -17,13 +16,13 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace LPAP.Forms.Views
 {
-    public partial class OnnxControlView : Form
-    {
-        private const string DefaultModelPath = @"D:\Models";
-        private DemucsModel? _model;
-        private DemucsService? _service;
+	public partial class OnnxControlView : Form
+	{
+		private const string DefaultModelPath = @"D:\Models";
+		private DemucsModel? _model;
+		private DemucsService? _service;
 
-        internal readonly AudioObj Audio;
+		internal readonly AudioObj Audio;
 		private CancellationTokenSource? _cts = null;
 
 		// --- Timer/ETA wie im VisualizerDialog ---
@@ -39,13 +38,14 @@ namespace LPAP.Forms.Views
 		private int _doneSteps = 0;
 
 		public OnnxControlView(AudioObj audio)
-        {
-            this.InitializeComponent();
-            this.Audio = audio.Clone();
+		{
+			this.InitializeComponent();
+			this.Audio = audio.Clone();
 			this.Text = "ONNX-Control '" + this.Audio.Name + "'";
 
-            this.ComboBox_FillDevices();
-            this.ComboBox_FillModels();
+
+			this.ComboBox_FillDevices();
+			this.ComboBox_FillModels();
 
 			this.SetupTimeTimer();
 			this.ResetTimeAndStepsUI();
@@ -164,53 +164,53 @@ namespace LPAP.Forms.Views
 		}
 
 		private void ComboBox_FillDevices()
-        {
-            this.comboBox_devices.SuspendLayout();
-            this.comboBox_devices.Items.Clear();
+		{
+			this.comboBox_devices.SuspendLayout();
+			this.comboBox_devices.Items.Clear();
 
-            using var searcher = new ManagementObjectSearcher("SELECT Name, AdapterRAM FROM Win32_VideoController");
-            foreach (ManagementObject obj in searcher.Get())
-            {
-                string name = obj["Name"]?.ToString() ?? "Unknown Device";
-                var ramObj = obj["AdapterRAM"];
-                ulong ramBytes = ramObj is null or DBNull ? 0UL : Convert.ToUInt64(ramObj, CultureInfo.InvariantCulture);
-                double ramGB = ramBytes / (1024.0 * 1024.0 * 1024.0);
-                string displayText = $"[{this.comboBox_devices.Items.Count}] {name} - {ramGB:F2} GB RAM";
-                this.comboBox_devices.Items.Add(displayText);
-            }
+			using var searcher = new ManagementObjectSearcher("SELECT Name, AdapterRAM FROM Win32_VideoController");
+			foreach (ManagementObject obj in searcher.Get())
+			{
+				string name = obj["Name"]?.ToString() ?? "Unknown Device";
+				var ramObj = obj["AdapterRAM"];
+				ulong ramBytes = ramObj is null or DBNull ? 0UL : Convert.ToUInt64(ramObj, CultureInfo.InvariantCulture);
+				double ramGB = ramBytes / (1024.0 * 1024.0 * 1024.0);
+				string displayText = $"[{this.comboBox_devices.Items.Count}] {name} - {ramGB:F2} GB RAM";
+				this.comboBox_devices.Items.Add(displayText);
+			}
 
-            if (this.comboBox_devices.Items.Count > 0)
-            {
-                this.comboBox_devices.SelectedIndex = 0;
-            }
+			if (this.comboBox_devices.Items.Count > 0)
+			{
+				this.comboBox_devices.SelectedIndex = 0;
+			}
 
-            this.comboBox_devices.ResumeLayout();
-        }
+			this.comboBox_devices.ResumeLayout();
+		}
 
-        private void ComboBox_FillModels()
-        {
-            this.comboBox_models.SuspendLayout();
-            this.comboBox_models.Items.Clear();
+		private void ComboBox_FillModels()
+		{
+			this.comboBox_models.SuspendLayout();
+			this.comboBox_models.Items.Clear();
 
-            var basePath = Environment.GetEnvironmentVariable("LPAP_DEMUCS_MODEL_DIR") ?? DefaultModelPath;
+			var basePath = Environment.GetEnvironmentVariable("LPAP_DEMUCS_MODEL_DIR") ?? DefaultModelPath;
 
-            var models = OnnxModelEnumerator.ListModels(basePath);
-            if (models.Count == 0)
-            {
-                this.comboBox_models.Items.Add("(No .onnx models found)");
-                this.comboBox_models.Enabled = false;
-                this.comboBox_models.SelectedIndex = 0;
-                return;
-            }
+			var models = OnnxModelEnumerator.ListModels(basePath);
+			if (models.Count == 0)
+			{
+				this.comboBox_models.Items.Add("(No .onnx models found)");
+				this.comboBox_models.Enabled = false;
+				this.comboBox_models.SelectedIndex = 0;
+				return;
+			}
 
-            this.comboBox_models.Items.AddRange(models.ToArray());
-            if (this.comboBox_models.Items.Count > 0)
-            {
-                this.comboBox_models.SelectedIndex = 0;
-            }
+			this.comboBox_models.Items.AddRange(models.ToArray());
+			if (this.comboBox_models.Items.Count > 0)
+			{
+				this.comboBox_models.SelectedIndex = 0;
+			}
 
-            this.comboBox_models.ResumeLayout();
-        }
+			this.comboBox_models.ResumeLayout();
+		}
 
 
 
@@ -251,6 +251,8 @@ namespace LPAP.Forms.Views
 
 				this._model = new DemucsModel(demucsOpts, onnxOpts);
 				this._service = new DemucsService(this._model);
+				// Bind logging to UI now that service exists
+				this.listBox_log.DataSource = this._service.LogLines;
 
 				// optional: show fixed frames for sanity
 				this.label_status.Text = $"ONNX Demucs initialized on [{deviceIndex}] OK. FixedT={this._model.FixedInputFrames.ToString() ?? "dynamic"}";
@@ -272,115 +274,139 @@ namespace LPAP.Forms.Views
 		}
 
 		private async void button_inference_Click(object sender, EventArgs e)
-        {
-            if (this._service is null)
-            {
-                MessageBox.Show("Please initialize the ONNX model first.", "ONNX", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
+		{
+			if (this._service is null)
+			{
+				MessageBox.Show("Please initialize the ONNX model first.", "ONNX", MessageBoxButtons.OK, MessageBoxIcon.Information);
+				return;
+			}
 
-            this.button_inference.Enabled = false;
+			bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+
 			this.button_inference.Text = "Cancel";
 			this.button_inference.BackColor = Color.IndianRed;
-            this.button_initialize.Enabled = false;
-			
+			this.button_initialize.Enabled = false;
+
 			Action cancelAction = new(() =>
 			{
-                try
-                {
-                    this._cts?.Cancel();
-                    this.button_inference.Enabled = false;
-                    this.button_inference.Text = "Stopping";
-                }
-                catch (Exception ex)
+				try
+				{
+					this._cts?.Cancel();
+					this.button_inference.Enabled = false;
+					this.button_inference.Text = "Stopping";
+				}
+				catch (Exception ex)
 				{
 					CudaLog.Error(ex, "Error while cancelling ONNX Demucs inference", "ONNX");
 				}
-            });
-            this.button_inference.Click += (_, __) => cancelAction();
+			});
+			this.button_inference.Click += (_, __) => cancelAction();
 
-            this.comboBox_models.Enabled = false;
-            this.progressBar_inferencing.Minimum = 0;
-            this.progressBar_inferencing.Maximum = 100;
-            this.progressBar_inferencing.Value = 0;
-            this.label_status.Text = "Inferencing…";
+			this.comboBox_models.Enabled = false;
+			this.progressBar_inferencing.Minimum = 0;
+			this.progressBar_inferencing.Maximum = 100;
+			this.progressBar_inferencing.Value = 0;
+			this.label_status.Text = "Inferencing…";
 
-            // Timer/ETA Start
-            this._inferStarted = DateTime.UtcNow;
-            this._lastProgress01 = 0.0;
-            this._estimatedTotalSec = 0.0;
-            this._hadAnyProgress = false;
-            this._progressSamples.Clear();
-            this._totalSteps = 0;
-            this._doneSteps = 0;
-            this.ResetTimeAndStepsUI();
-            this._timeTimer.Start();
+			// Timer/ETA Start
+			this._inferStarted = DateTime.UtcNow;
+			this._lastProgress01 = 0.0;
+			this._estimatedTotalSec = 0.0;
+			this._hadAnyProgress = false;
+			this._progressSamples.Clear();
+			this._totalSteps = 0;
+			this._doneSteps = 0;
+			this.ResetTimeAndStepsUI();
+			this._timeTimer.Start();
 
-            try
-            {
-                // Progress (0..1) -> UI-Bar + ETA
-                var uiProgress = new Progress<double>(p =>
-                {
-                    p = Math.Clamp(p, 0.0, 1.0);
-                    this.progressBar_inferencing.Value = Math.Clamp((int)Math.Round(p * 100.0), 0, 100);
+			try
+			{
+				// Progress (0..1) -> UI-Bar + ETA
+				var uiProgress = new Progress<double>(p =>
+				{
+					p = Math.Clamp(p, 0.0, 1.0);
+					this.progressBar_inferencing.Value = Math.Clamp((int) Math.Round(p * 100.0), 0, 100);
 
-                    if (p > this._lastProgress01 + 1e-6)
-                    {
-                        double nowSec = (DateTime.UtcNow - this._inferStarted!.Value).TotalSeconds;
-                        this._lastProgress01 = p;
-                        this._hadAnyProgress = true;
+					if (p > this._lastProgress01 + 1e-6)
+					{
+						double nowSec = (DateTime.UtcNow - this._inferStarted!.Value).TotalSeconds;
+						this._lastProgress01 = p;
+						this._hadAnyProgress = true;
 
-                        this.PushProgressSample(nowSec, p);
-                        this.RecomputeEtaFromSamples(nowSec, p);
-                    }
-                });
+						this.PushProgressSample(nowSec, p);
+						this.RecomputeEtaFromSamples(nowSec, p);
+					}
+				});
 
-                // Steps (Chunks): initial total + Fortschritt (done/total)
-                var stepProgress = new Progress<(int done, int total)>(st =>
-                {
-                    this._totalSteps = Math.Max(0, st.total);
-                    this._doneSteps = Math.Clamp(st.done, 0, this._totalSteps);
-                    this.label_steps.Text = $"{this._doneSteps} / {this._totalSteps}";
-                });
+				// Steps (Chunks): initial total + Fortschritt (done/total)
+				// ETA aus Schrittmittelwert ableiten und sanft glätten
+				var stepProgress = new Progress<(int done, int total)>(st =>
+				{
+					this._totalSteps = Math.Max(0, st.total);
+					this._doneSteps = Math.Clamp(st.done, 0, this._totalSteps);
+					this.label_steps.Text = $"{this._doneSteps} / {this._totalSteps}";
 
-                var adapter = new LPAP.Forms.Adapters.DemucsAudioObjAdapter(this._service);
+					if (this._inferStarted.HasValue && this._totalSteps > 0)
+					{
+						double nowSec = (DateTime.UtcNow - this._inferStarted.Value).TotalSeconds;
+						double p = Math.Clamp((double)this._doneSteps / this._totalSteps, 0.0, 1.0);
+						this._lastProgress01 = Math.Max(this._lastProgress01, p);
+						this._hadAnyProgress = this._hadAnyProgress || p > 0.0;
+						this.PushProgressSample(nowSec, p);
 
-                this._cts = new();
-                var (drums, bass, other, vocals) = await adapter.SeparateAsync(
-                    this.Audio,
-                    chunkSeconds: 6.0,
-                    overlapFraction: 0.25f,
-                    progress: uiProgress,
-                    stepProgress: stepProgress,
-                    ct: this._cts.Token).ConfigureAwait(true);
+						if (this._doneSteps > 0)
+						{
+							// Correct total estimate: elapsed / progress
+							double totalEstimate = p > 0.0 ? (nowSec / p) : 0.0;
+							this.RecomputeEtaFromSamples(nowSec, p);
+							this._estimatedTotalSec = this._estimatedTotalSec <= 0.01
+								? totalEstimate
+								: this._estimatedTotalSec * 0.5 + totalEstimate * 0.5;
+						}
+					}
+				});
 
-                this.label_status.Text = "Inference done.";
-                this.progressBar_inferencing.Value = 100;
+				var adapter = new Adapters.DemucsAudioObjAdapter(this._service);
 
-                var acv = new AudioCollectionView([drums, bass, other, vocals]);
+				this._cts = new();
+				var (drums, bass, other, vocals) = await adapter.SeparateAsync(
+					this.Audio,
+					chunkSeconds: 6.0,
+					overlapFraction: 0.25f,
+					progress: uiProgress,
+					stepProgress: stepProgress,
+					ct: this._cts.Token).ConfigureAwait(true);
+
+				this.label_status.Text = "Inference done.";
+				this.progressBar_inferencing.Value = 100;
+
+				var acv = new AudioCollectionView([drums, bass, other, vocals]);
 				acv.Rename("Stems - " + this.Audio.Name);
-            }
-            catch (Exception ex)
-            {
-                this.label_status.Text = "Inference failed.";
-                var dlgResult = MessageBox.Show(ex.ToString() + "\n\n - Copy to Clipboard?", "Inference Error", MessageBoxButtons.YesNo, MessageBoxIcon.Error);
-                if (dlgResult == DialogResult.Yes)
-                {
-                    Clipboard.SetText(ex.ToString());
-                }
-            }
-            finally
-            {
-                try { this._timeTimer.Stop(); } catch { }
-                this.button_inference.Enabled = true;
-                this.button_inference.Text = "Inference";
+			}
+			catch (Exception ex)
+			{
+				this.label_status.Text = "Inference failed.";
+				var dlgResult = MessageBox.Show(ex.ToString() + "\n\n - Copy to Clipboard?", "Inference Error", MessageBoxButtons.YesNo, MessageBoxIcon.Error);
+				if (dlgResult == DialogResult.Yes)
+				{
+					Clipboard.SetText(ex.ToString());
+				}
+			}
+			finally
+			{
+				try { this._timeTimer.Stop(); } catch { }
+				this.button_inference.Enabled = true;
+				this.button_inference.Text = "Inference";
 				this.button_inference.Click -= (_, __) => cancelAction();
-                this.button_inference.BackColor = SystemColors.ControlText;
-                this.button_initialize.Enabled = true;
+				this.button_inference.ForeColor = SystemColors.ControlText;
+				this.button_initialize.Enabled = true;
 				this.comboBox_models.Enabled = true;
 
-				this.Close();
-            }
+				if (ctrlFlag)
+				{
+					this.Close();
+				}
+			}
 
 			CudaLog.Info($"ONNX Demucs inference finished ({(DateTime.UtcNow - this._inferStarted.Value).TotalSeconds:F1} sec. elapsed)", "", "ONNX");
 			WindowMain.MsgBox_ShowLastCudaSession(true);
@@ -395,8 +421,30 @@ namespace LPAP.Forms.Views
 				this._cts?.Cancel();
 			}
 			catch { }
+			// Detach logging source on close
+			this.listBox_log.DataSource = null;
 			this.Close();
-        }
+		}
 
+		private void listBox_log_MouseDoubleClick(object sender, MouseEventArgs e)
+		{
+			bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+
+			string text = string.Empty;
+			if (ctrlFlag)
+			{
+				text = string.Join(Environment.NewLine, this.listBox_log.Items.Cast<string>());
+			}
+			else
+			{
+				text = this.listBox_log.SelectedItem as string ?? string.Empty;
+			}
+
+			if (!string.IsNullOrWhiteSpace(text))
+			{
+				Clipboard.SetText(text);
+				CudaLog.Info("Copied log text to clipboard.", "", "ONNX");
+			}
+		}
 	}
 }

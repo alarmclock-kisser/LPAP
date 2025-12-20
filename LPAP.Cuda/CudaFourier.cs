@@ -7,194 +7,195 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace LPAP.Cuda;
-
-internal sealed class CudaFourier : IDisposable
+namespace LPAP.Cuda
 {
-	private readonly PrimaryContext _ctx;
-	private readonly CudaRegister _register;
-
-	internal CudaFourier(PrimaryContext ctx, CudaRegister register)
+	internal sealed class CudaFourier : IDisposable
 	{
-		this._ctx = ctx ?? throw new ArgumentNullException(nameof(ctx));
-		this._register = register ?? throw new ArgumentNullException(nameof(register));
-	}
+		private readonly PrimaryContext _ctx;
+		private readonly CudaRegister _register;
 
-	public void Dispose()
-	{
-		GC.SuppressFinalize(this);
-	}
-
-	public IntPtr PerformFft(IntPtr indexPointer, bool keep = false)
-		=> this.ExecuteTransform(indexPointer, keep, cufftType.R2C, inverse: false);
-
-	public IntPtr PerformIfft(IntPtr indexPointer, bool keep = false)
-		=> this.ExecuteTransform(indexPointer, keep, cufftType.C2R, inverse: true);
-
-	public Task<IntPtr> PerformFftAsync(IntPtr indexPointer, bool keep = false)
-		=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.R2C, inverse: false, preferPlanReuse: false);
-
-	public Task<IntPtr> PerformIfftAsync(IntPtr indexPointer, bool keep = false)
-		=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.C2R, inverse: true, preferPlanReuse: false);
-
-	public Task<IntPtr> PerformFftManyAsync(IntPtr indexPointer, bool keep = false)
-		=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.R2C, inverse: false, preferPlanReuse: true);
-
-	public Task<IntPtr> PerformIfftManyAsync(IntPtr indexPointer, bool keep = false)
-		=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.C2R, inverse: true, preferPlanReuse: true);
-
-	private IntPtr ExecuteTransform(IntPtr indexPointer, bool keep, cufftType transformType, bool inverse)
-	{
-		var mem = this._register[indexPointer];
-		if (!this.ValidateInput(mem, inverse))
+		internal CudaFourier(PrimaryContext ctx, CudaRegister register)
 		{
-			return IntPtr.Zero;
+			this._ctx = ctx ?? throw new ArgumentNullException(nameof(ctx));
+			this._register = register ?? throw new ArgumentNullException(nameof(register));
 		}
 
-		var outputMem = inverse
-			? this._register.AllocateGroup<float>(mem!.Lengths)
-			: this._register.AllocateGroup<float2>(mem!.Lengths);
-
-		if (outputMem == null)
+		public void Dispose()
 		{
-			return indexPointer;
+			GC.SuppressFinalize(this);
 		}
 
-		Dictionary<int, CudaFFTPlan1D>? plans = null;
-		try
+		public IntPtr PerformFft(IntPtr indexPointer, bool keep = false)
+			=> this.ExecuteTransform(indexPointer, keep, cufftType.R2C, inverse: false);
+
+		public IntPtr PerformIfft(IntPtr indexPointer, bool keep = false)
+			=> this.ExecuteTransform(indexPointer, keep, cufftType.C2R, inverse: true);
+
+		public Task<IntPtr> PerformFftAsync(IntPtr indexPointer, bool keep = false)
+			=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.R2C, inverse: false, preferPlanReuse: false);
+
+		public Task<IntPtr> PerformIfftAsync(IntPtr indexPointer, bool keep = false)
+			=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.C2R, inverse: true, preferPlanReuse: false);
+
+		public Task<IntPtr> PerformFftManyAsync(IntPtr indexPointer, bool keep = false)
+			=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.R2C, inverse: false, preferPlanReuse: true);
+
+		public Task<IntPtr> PerformIfftManyAsync(IntPtr indexPointer, bool keep = false)
+			=> this.ExecuteTransformAsync(indexPointer, keep, cufftType.C2R, inverse: true, preferPlanReuse: true);
+
+		private IntPtr ExecuteTransform(IntPtr indexPointer, bool keep, cufftType transformType, bool inverse)
 		{
-			plans = [];
-			for (int i = 0; i < mem.Count; i++)
+			var mem = this._register[indexPointer];
+			if (!this.ValidateInput(mem, inverse))
 			{
-				int length = (int) mem.Lengths[i].ToInt64();
-				if (!plans.TryGetValue(length, out var plan))
-				{
-					plan = new CudaFFTPlan1D(length, transformType, 1);
-					plans[length] = plan;
-				}
-
-				plan.Exec(new CUdeviceptr(mem.Pointers[i]), new CUdeviceptr(outputMem.Pointers[i]));
+				return IntPtr.Zero;
 			}
-		}
-		catch (Exception ex)
-		{
-			CudaLog.Error("FFT execution failed", ex.Message);
-			this._register.FreeMemory(outputMem);
-			return indexPointer;
-		}
-		finally
-		{
-			if (plans != null)
+
+			var outputMem = inverse
+				? this._register.AllocateGroup<float>(mem!.Lengths)
+				: this._register.AllocateGroup<float2>(mem!.Lengths);
+
+			if (outputMem == null)
 			{
-				foreach (var plan in plans.Values)
-				{
-					plan.Dispose();
-				}
+				return indexPointer;
 			}
-		}
 
-		if (!keep)
-		{
-			this._register.FreeMemory(indexPointer);
-		}
-
-		return outputMem.IndexPointer;
-	}
-
-	private async Task<IntPtr> ExecuteTransformAsync(IntPtr indexPointer, bool keep, cufftType transformType, bool inverse, bool preferPlanReuse)
-	{
-		var mem = this._register[indexPointer];
-		if (!this.ValidateInput(mem, inverse))
-		{
-			return IntPtr.Zero;
-		}
-
-		var outputMem = inverse
-			? await this._register.AllocateGroupAsync<float>(mem!.Lengths).ConfigureAwait(false)
-			: await this._register.AllocateGroupAsync<float2>(mem!.Lengths).ConfigureAwait(false);
-
-		if (outputMem == null)
-		{
-			return indexPointer;
-		}
-
-		var stream = this._register.GetStream();
-		if (stream == null)
-		{
-			this._register.FreeMemory(outputMem);
-			return indexPointer;
-		}
-
-		Dictionary<int, CudaFFTPlan1D>? cachedPlans = preferPlanReuse ? new() : null;
-		try
-		{
-			for (int i = 0; i < mem!.Count; i++)
+			Dictionary<int, CudaFFTPlan1D>? plans = null;
+			try
 			{
-				int length = (int) mem.Lengths[i].ToInt64();
-				CudaFFTPlan1D plan;
-				if (cachedPlans != null)
+				plans = [];
+				for (int i = 0; i < mem.Count; i++)
 				{
-					if (!cachedPlans.TryGetValue(length, out plan!))
+					int length = (int) mem.Lengths[i].ToInt64();
+					if (!plans.TryGetValue(length, out var plan))
 					{
-						plan = new CudaFFTPlan1D(length, transformType, 1, stream.Stream);
-						cachedPlans[length] = plan;
+						plan = new CudaFFTPlan1D(length, transformType, 1);
+						plans[length] = plan;
+					}
+
+					plan.Exec(new CUdeviceptr(mem.Pointers[i]), new CUdeviceptr(outputMem.Pointers[i]));
+				}
+			}
+			catch (Exception ex)
+			{
+				CudaLog.Error("FFT execution failed", ex.Message);
+				this._register.FreeMemory(outputMem);
+				return indexPointer;
+			}
+			finally
+			{
+				if (plans != null)
+				{
+					foreach (var plan in plans.Values)
+					{
+						plan.Dispose();
 					}
 				}
-				else
-				{
-					plan = new CudaFFTPlan1D(length, transformType, 1, stream.Stream);
-				}
-
-				plan.Exec(new CUdeviceptr(mem.Pointers[i]), new CUdeviceptr(outputMem.Pointers[i]));
-
-				if (cachedPlans == null)
-				{
-					plan.Dispose();
-				}
 			}
 
-			await Task.Run(stream.Synchronize).ConfigureAwait(false);
-		}
-		catch (Exception ex)
-		{
-			CudaLog.Error("Async FFT execution failed", ex.Message);
-			this._register.FreeMemory(outputMem);
-			return indexPointer;
-		}
-		finally
-		{
-			if (cachedPlans != null)
+			if (!keep)
 			{
-				foreach (var plan in cachedPlans.Values)
+				this._register.FreeMemory(indexPointer);
+			}
+
+			return outputMem.IndexPointer;
+		}
+
+		private async Task<IntPtr> ExecuteTransformAsync(IntPtr indexPointer, bool keep, cufftType transformType, bool inverse, bool preferPlanReuse)
+		{
+			var mem = this._register[indexPointer];
+			if (!this.ValidateInput(mem, inverse))
+			{
+				return IntPtr.Zero;
+			}
+
+			var outputMem = inverse
+				? await this._register.AllocateGroupAsync<float>(mem!.Lengths).ConfigureAwait(false)
+				: await this._register.AllocateGroupAsync<float2>(mem!.Lengths).ConfigureAwait(false);
+
+			if (outputMem == null)
+			{
+				return indexPointer;
+			}
+
+			var stream = this._register.GetStream();
+			if (stream == null)
+			{
+				this._register.FreeMemory(outputMem);
+				return indexPointer;
+			}
+
+			Dictionary<int, CudaFFTPlan1D>? cachedPlans = preferPlanReuse ? new() : null;
+			try
+			{
+				for (int i = 0; i < mem!.Count; i++)
 				{
-					plan.Dispose();
+					int length = (int) mem.Lengths[i].ToInt64();
+					CudaFFTPlan1D plan;
+					if (cachedPlans != null)
+					{
+						if (!cachedPlans.TryGetValue(length, out plan!))
+						{
+							plan = new CudaFFTPlan1D(length, transformType, 1, stream.Stream);
+							cachedPlans[length] = plan;
+						}
+					}
+					else
+					{
+						plan = new CudaFFTPlan1D(length, transformType, 1, stream.Stream);
+					}
+
+					plan.Exec(new CUdeviceptr(mem.Pointers[i]), new CUdeviceptr(outputMem.Pointers[i]));
+
+					if (cachedPlans == null)
+					{
+						plan.Dispose();
+					}
+				}
+
+				await Task.Run(stream.Synchronize).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				CudaLog.Error("Async FFT execution failed", ex.Message);
+				this._register.FreeMemory(outputMem);
+				return indexPointer;
+			}
+			finally
+			{
+				if (cachedPlans != null)
+				{
+					foreach (var plan in cachedPlans.Values)
+					{
+						plan.Dispose();
+					}
 				}
 			}
+
+			if (!keep)
+			{
+				this._register.FreeMemory(indexPointer);
+			}
+
+			return outputMem.IndexPointer;
 		}
 
-		if (!keep)
+		private bool ValidateInput(CudaMem? mem, bool inverse)
 		{
-			this._register.FreeMemory(indexPointer);
+			if (mem == null || mem.IndexPointer == IntPtr.Zero || mem.Count == 0)
+			{
+				CudaLog.Warn("CudaFourier input memory invalid");
+				return false;
+			}
+
+			var expectedType = inverse ? typeof(float2) : typeof(float);
+			if (mem.ElementType != expectedType)
+			{
+				CudaLog.Warn("CudaFourier unexpected element type", $"Expected {expectedType.Name}, got {mem.ElementType.Name}");
+				return false;
+			}
+
+			return true;
 		}
-
-		return outputMem.IndexPointer;
-	}
-
-	private bool ValidateInput(CudaMem? mem, bool inverse)
-	{
-		if (mem == null || mem.IndexPointer == IntPtr.Zero || mem.Count == 0)
-		{
-			CudaLog.Warn("CudaFourier input memory invalid");
-			return false;
-		}
-
-		var expectedType = inverse ? typeof(float2) : typeof(float);
-		if (mem.ElementType != expectedType)
-		{
-			CudaLog.Warn("CudaFourier unexpected element type", $"Expected {expectedType.Name}, got {mem.ElementType.Name}");
-			return false;
-		}
-
-		return true;
 	}
 }

@@ -752,6 +752,11 @@ namespace LPAP.Forms.Views
 
 		private void stemsToolStripMenuItem_Click(object sender, EventArgs e)
 		{
+
+		}
+
+		private void onnxToolStripMenuItem_Click(object sender, EventArgs e)
+		{
 			var selected = this.GetSelectedAudioItems();
 			if (selected.Count != 1)
 			{
@@ -761,6 +766,31 @@ namespace LPAP.Forms.Views
 
 			var dlg = new OnnxControlView(selected.First());
 			dlg.ShowDialog(this);
+		}
+
+		private void openVinoToolStripMenuItem_Click(object sender, EventArgs e)
+		{
+			var selected = this.GetSelectedAudioItems();
+			if (selected.Count != 1)
+			{
+				MessageBox.Show("Please select exactly one audio track for stem separation.", "Stems", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+
+			var dlg = new OpenVinoDialog(selected.First());
+			dlg.ShowDialog(this);
+		}
+
+		private void torchToolStripMenuItem_Click(object sender, EventArgs e)
+		{
+			var selected = this.GetSelectedAudioItems();
+			if (selected.Count != 1)
+			{
+				MessageBox.Show("Please select exactly one audio track for stem separation.", "Stems", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
+			}
+
+
 		}
 
 		private void addNumberingToolStripMenuItem_Click(object sender, EventArgs e)
@@ -934,7 +964,7 @@ namespace LPAP.Forms.Views
 			this.Text = newName;
 		}
 
-		
+
 	}
 
 

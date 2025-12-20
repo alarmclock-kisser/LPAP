@@ -918,7 +918,7 @@ namespace LPAP.Cuda
 						freeInput = true;
 						inputIndexPtr = mem.IndexPointer;
 
-						await this.Register.PushDataAsync<float>(audio.Data).ConfigureAwait(false);
+						await this.Register.PushDataAsync(audio.Data).ConfigureAwait(false);
 					}
 					else
 					{
@@ -1432,7 +1432,7 @@ namespace LPAP.Cuda
 			return dst;
 		}
 
-		private static void Configure1D(ManagedCuda.CudaKernel kernel, long elementCount)
+		private static void Configure1D(CudaKernel kernel, long elementCount)
 		{
 			// basic sane defaults; your launcher has a smarter version internally, but it’s private :contentReference[oaicite:4]{index=4}
 			int block = 256;

@@ -11,7 +11,7 @@ namespace LPAP.Forms.Dialogs
 {
 	public partial class VisualizerDialogPreview : Form
 	{
-		private NvencVideoRenderer.PreviewSession? _session;
+		private PreviewSession? _session;
 
 		private volatile bool _paused;
 
@@ -20,6 +20,10 @@ namespace LPAP.Forms.Dialogs
 			Size resolution,
 			double frameRate = 10,
 			float amplification = 0.66f,
+			Color? graphColor = null,
+			Color? backColor = null,
+			int thickness = 1,
+			float threshold = 0.1f,
 			NvencOptions encOptions = null!,
 			VisualizerOptions? visualizerOptions = null,
 			VisualizerMode? visualizerMode = null)
@@ -35,6 +39,10 @@ namespace LPAP.Forms.Dialogs
 				height: resolution.Height,
 				frameRate: frameRate,
 				amplification: amplification,
+				graphColor: graphColor,
+				backColor: backColor,
+				thickness: thickness,
+				threshold: threshold,
 				visualizerMode: visualizerMode,
 				visualizerOptions: visualizerOptions,
 				maxWorkers: Environment.ProcessorCount,

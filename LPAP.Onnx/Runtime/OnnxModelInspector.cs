@@ -1,24 +1,25 @@
 using Microsoft.ML.OnnxRuntime;
 
-namespace LPAP.Onnx.Runtime;
-
-public static class OnnxModelInspector
+namespace LPAP.Onnx.Runtime
 {
-	public static string Describe(InferenceSession session)
+	public static class OnnxModelInspector
 	{
-		var sb = new System.Text.StringBuilder();
-		sb.AppendLine("Inputs:");
-		foreach (var kv in session.InputMetadata)
+		public static string Describe(InferenceSession session)
 		{
-			var m = kv.Value;
-			sb.AppendLine($"- {kv.Key}: {m.ElementType} [{string.Join(",", m.Dimensions)}]");
+			var sb = new System.Text.StringBuilder();
+			sb.AppendLine("Inputs:");
+			foreach (var kv in session.InputMetadata)
+			{
+				var m = kv.Value;
+				sb.AppendLine($"- {kv.Key}: {m.ElementType} [{string.Join(",", m.Dimensions)}]");
+			}
+			sb.AppendLine("Outputs:");
+			foreach (var kv in session.OutputMetadata)
+			{
+				var m = kv.Value;
+				sb.AppendLine($"- {kv.Key}: {m.ElementType} [{string.Join(",", m.Dimensions)}]");
+			}
+			return sb.ToString();
 		}
-		sb.AppendLine("Outputs:");
-		foreach (var kv in session.OutputMetadata)
-		{
-			var m = kv.Value;
-			sb.AppendLine($"- {kv.Key}: {m.ElementType} [{string.Join(",", m.Dimensions)}]");
-		}
-		return sb.ToString();
 	}
 }
