@@ -182,9 +182,22 @@ namespace LPAP.Audio
 
 		public void DataChanged()
 		{
-			this.OnPropertyChanged(nameof(this.Data));
-			this.OnPropertyChanged(nameof(this.LengthSamples));
-			this.OnPropertyChanged(nameof(this.Duration));
+		// Notify bindings
+		this.OnPropertyChanged(nameof(this.Data));
+		this.OnPropertyChanged(nameof(this.LengthSamples));
+		this.OnPropertyChanged(nameof(this.Duration));
+
+		// If playback is attached, ensure engine reloads fresh data on next play
+		if (this.PlaybackTracking != null || this.PlaybackState == PlaybackState.Playing)
+		{
+			try
+			{
+				AudioPlaybackEngine.Instance.Stop(this);
+			}
+			catch { }
+			this.PlaybackTracking = null;
+			this.SetPlaybackState(PlaybackState.Stopped);
+		}
 		}
 
 		internal void SetPlaybackState(PlaybackState state)

@@ -34,7 +34,11 @@ namespace LPAP.Forms.Dialogs
 					["progress"] = this.Progress,
 					["chunkSize"] = this.ChunkSize,
 					["overlap"] = this.Overlap,
-					["factor"] = this.StretchFactor
+					["factor"] = this.StretchFactor,
+					// CancellationToken nicht als UI-Input bauen; intern übergeben
+					["ct"] = this.ProcessingCancellationSource?.Token ?? CancellationToken.None,
+					["token"] = this.ProcessingCancellationSource?.Token ?? CancellationToken.None,
+					["cancellationToken"] = this.ProcessingCancellationSource?.Token ?? CancellationToken.None
 				};
 
 				if (this.checkBox_autoChunking.Checked)
@@ -138,7 +142,7 @@ namespace LPAP.Forms.Dialogs
 				this.Close();
 			}
 
-			this.Text = $"Time Stretch - {trackView?.Name ?? this.Tracks.Count() + " Tracks"}";
+			this.Text = $"Time Stretch - {trackView?.Name ?? (this.Tracks.Count() > 1 ? this.Tracks.Count() + " Tracks" : this.Tracks.First().Name)}";
 			this.StartPosition = FormStartPosition.Manual;
 			this.Location = WindowsScreenHelper.GetCornerPosition(this, false, false);
 
@@ -375,13 +379,40 @@ namespace LPAP.Forms.Dialogs
 			{
 				decimal d = nud.Value;
 
-				if (effectiveType == typeof(int)) return (int) d;
-				if (effectiveType == typeof(float)) return (float) d;
-				if (effectiveType == typeof(double)) return (double) d;
-				if (effectiveType == typeof(decimal)) return d;
-				if (effectiveType == typeof(long)) return (long) d;
-				if (effectiveType == typeof(short)) return (short) d;
-				if (effectiveType == typeof(byte)) return (byte) d;
+				if (effectiveType == typeof(int))
+				{
+					return (int) d;
+				}
+
+				if (effectiveType == typeof(float))
+				{
+					return (float) d;
+				}
+
+				if (effectiveType == typeof(double))
+				{
+					return (double) d;
+				}
+
+				if (effectiveType == typeof(decimal))
+				{
+					return d;
+				}
+
+				if (effectiveType == typeof(long))
+				{
+					return (long) d;
+				}
+
+				if (effectiveType == typeof(short))
+				{
+					return (short) d;
+				}
+
+				if (effectiveType == typeof(byte))
+				{
+					return (byte) d;
+				}
 
 				// Fallback: attempt change type from decimal
 				try
@@ -521,8 +552,15 @@ namespace LPAP.Forms.Dialogs
 
 				// Base parameter dictionary:
 				var callBase = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-				foreach (var kv in this.ExcludedParameters) callBase[kv.Key] = kv.Value;
-				foreach (var kv in this.ParameterValues) callBase[kv.Key] = kv.Value;
+				foreach (var kv in this.ExcludedParameters)
+				{
+					callBase[kv.Key] = kv.Value;
+				}
+
+				foreach (var kv in this.ParameterValues)
+				{
+					callBase[kv.Key] = kv.Value;
+				}
 
 				// Multi-track weighting for ETA & global progress
 				var trackList = this.Tracks.ToList();
@@ -548,7 +586,10 @@ namespace LPAP.Forms.Dialogs
 					weights[i] = w;
 					totalWeight += w;
 				}
-				if (totalWeight <= 0) totalWeight = 1;
+				if (totalWeight <= 0)
+				{
+					totalWeight = 1;
+				}
 
 				// Start timer + reset ETA state
 				StartProcessingTimer();
@@ -623,7 +664,7 @@ namespace LPAP.Forms.Dialogs
 						args[i] = p.HasDefaultValue ? p.DefaultValue : GetDefaultValue(p.ParameterType);
 					}
 
-					CudaLog.Info($"TimeStretch start: trackIndex={ti + 1}, totalTracks={trackList.Count}, method={method.Name}, chunkSize={(this.checkBox_autoChunking.Checked ? 0 : this.ChunkSize)}, overlap={(this.checkBox_autoChunking.Checked ? 0f : this.Overlap):0.###}, factor={this.StretchFactor:0.#####}, normalize={this.Normalize:0.###}, maxWorkers={this.MaxWorkers}, channels={track.Channels}, sampleRate={track.SampleRate}, samples={(track.Data == null ? 0L : track.Data.LongLength)}, frames={((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels))}, durationSec={(((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels)) / (double) Math.Max(1, track.SampleRate)):0.###}");
+					CudaLog.Info($"TimeStretch start: trackIndex={ti + 1}, totalTracks={trackList.Count}, method={method.Name}, chunkSize={(this.checkBox_autoChunking.Checked ? 0 : this.ChunkSize)}, overlap={(this.checkBox_autoChunking.Checked ? 0f : this.Overlap):0.###}, factor={this.StretchFactor:0.#####}, normalize={this.Normalize:0.###}, maxWorkers={this.MaxWorkers}, channels={track.Channels}, sampleRate={track.SampleRate}, samples={(track.Data == null ? 0L : track.Data.LongLength)}, frames={((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels))}, durationSec={(((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels)) / (double) Math.Max(1, track.SampleRate)):0.###}", null, "TimeStretch");
 
 
 					// Invoke + await properly
@@ -638,7 +679,7 @@ namespace LPAP.Forms.Dialogs
 						}
 
 						// If a method returns a new instance, COPY into the existing one (TrackView holds readonly instance)
-						if (returned != null && !ReferenceEquals(returned, track))
+						if (returned != null)
 						{
 							track.CopyAudioObj(returned);
 
@@ -667,7 +708,7 @@ namespace LPAP.Forms.Dialogs
 						this.ProgressGlobal01 = Math.Clamp(doneWeightBeforeTrack / (double) totalWeight, 0.0, 1.0);
 					}
 
-					CudaLog.Info($"TimeStretch done: trackIndex={ti + 1}, totalTracks={trackList.Count}, channels={track.Channels}, sampleRate={track.SampleRate}, samples={(track.Data == null ? 0L : track.Data.LongLength)}, frames={((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels))}, durationSec={(((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels)) / (double) Math.Max(1, track.SampleRate)):0.###}");
+					CudaLog.Info($"TimeStretch done: trackIndex={ti + 1}, totalTracks={trackList.Count}, channels={track.Channels}, sampleRate={track.SampleRate}, samples={(track.Data == null ? 0L : track.Data.LongLength)}, frames={((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels))}, durationSec={(((track.Data == null ? 0L : track.Data.LongLength) / Math.Max(1, track.Channels)) / (double) Math.Max(1, track.SampleRate)):0.###}", null, "TimeStretch");
 					WindowMain.UpdateAllCollectionViews();
 					WindowMain.UpdateTrackDependentUi(track);
 				}
@@ -685,9 +726,6 @@ namespace LPAP.Forms.Dialogs
 				{
 					return;
 				}
-
-				this.DialogResult = DialogResult.OK;
-				this.Close();
 			}
 			catch (Exception ex)
 			{
@@ -700,6 +738,9 @@ namespace LPAP.Forms.Dialogs
 				{
 					this.SetProcessingState(false);
 				}
+
+				this.DialogResult = DialogResult.OK;
+				this.Close();
 			}
 
 			static object? GetDefaultValue(Type t) => t.IsValueType ? Activator.CreateInstance(t) : null;
@@ -709,13 +750,17 @@ namespace LPAP.Forms.Dialogs
 				if (value == null)
 				{
 					if (!targetType.IsValueType || Nullable.GetUnderlyingType(targetType) != null)
+					{
 						return null;
+					}
 
 					return Activator.CreateInstance(targetType);
 				}
 
 				if (targetType.IsInstanceOfType(value))
+				{
 					return value;
+				}
 
 				Type effectiveTarget = Nullable.GetUnderlyingType(targetType) ?? targetType;
 
@@ -724,7 +769,9 @@ namespace LPAP.Forms.Dialogs
 					if (effectiveTarget.IsEnum)
 					{
 						if (value is string s)
+						{
 							return Enum.Parse(effectiveTarget, s, ignoreCase: true);
+						}
 
 						object underlying = Convert.ChangeType(value, Enum.GetUnderlyingType(effectiveTarget), System.Globalization.CultureInfo.InvariantCulture);
 						return Enum.ToObject(effectiveTarget, underlying);
@@ -844,7 +891,9 @@ namespace LPAP.Forms.Dialogs
 				{
 					var first = this.EtaSamples.Peek();
 					if (elapsedSec - first.tSec <= EtaWindowSeconds)
+					{
 						break;
+					}
 
 					this.EtaSamples.Dequeue();
 				}
