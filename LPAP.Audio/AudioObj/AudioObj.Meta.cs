@@ -6,182 +6,185 @@ using System.Text;
 
 namespace LPAP.Audio
 {
-	public partial class AudioObj
-	{
-		public Dictionary<string, double> Metrics { get; private set; } = new Dictionary<string, double>
-		{
-			{ "Import", 0.0 },{ "Export", 0.0 },{ "Chunk", 0.0 },{ "Aggregate", 0.0 },
-			{ "Normalize", 0.0 },{ "Level", 0.0 },{ "Push", 0.0 },{ "Pull", 0.0 },
-			{ "FFT", 0.0 },{ "IFFT", 0.0 },{ "Stretch", 0.0 },
-			{ "BeatScan", 0.0 },{ "TimingScan", 0.0 }
-		};
-
-		public double this[string metric]
-		{
-			get
-			{
-				// Find by tolower case
-				if (this.Metrics.TryGetValue(metric, out double value))
-				{
-					return value;
-				}
-				else
-				{
-					var key = this.Metrics.Keys.FirstOrDefault(k => k.Equals(metric, StringComparison.OrdinalIgnoreCase));
-					if (key != null)
-					{
-						return this.Metrics[key];
-					}
-					else
-					{
-						// If not found, return 0.0
-						return 0.0;
-					}
-				}
-			}
-			set
-			{
-				// Find by tolower case
-				if (this.Metrics.ContainsKey(metric))
-				{
-					this.Metrics[metric] = value;
-				}
-				else
-				{
-					var key = this.Metrics.Keys.FirstOrDefault(k => k.Equals(metric, StringComparison.OrdinalIgnoreCase));
-					if (key != null)
-					{
-						this.Metrics[key] = value;
-					}
-					else
-					{
-						// Capitalize first letter and add to dictionary
-						string capitalizedMetric = char.ToUpper(metric[0]) + metric.Substring(1).ToLowerInvariant();
-						this.Metrics.Add(capitalizedMetric, value);
-					}
-				}
-			}
-		}
+    public partial class AudioObj
+    {
+        public TimeStretchArgs? TimeStretchArguments { get; set; } = null;
 
 
-		public float ReadBeatsPerMinuteTag(string tag = "TBPM", bool set = true)
-		{
-			// Read bpm metadata if available
-			float bpm = 0.0f;
-			float roughBeatsPerMinute = 0.0f;
+        public Dictionary<string, double> Metrics { get; private set; } = new Dictionary<string, double>
+        {
+            { "Import", 0.0 },{ "Export", 0.0 },{ "Chunk", 0.0 },{ "Aggregate", 0.0 },
+            { "Normalize", 0.0 },{ "Level", 0.0 },{ "Push", 0.0 },{ "Pull", 0.0 },
+            { "FFT", 0.0 },{ "IFFT", 0.0 },{ "Stretch", 0.0 },
+            { "BeatScan", 0.0 },{ "TimingScan", 0.0 }
+        };
 
-			try
-			{
-				if (!string.IsNullOrEmpty(this.FilePath) && File.Exists(this.FilePath))
-				{
-					using var file = TagLib.File.Create(this.FilePath);
-					if (file.Tag.BeatsPerMinute > 0)
-					{
-						roughBeatsPerMinute = file.Tag.BeatsPerMinute;
-					}
-					if (file.TagTypes.HasFlag(TagLib.TagTypes.Id3v2))
-					{
-						var id3v2Tag = (TagLib.Id3v2.Tag) file.GetTag(TagLib.TagTypes.Id3v2);
+        public double this[string metric]
+        {
+            get
+            {
+                // Find by tolower case
+                if (this.Metrics.TryGetValue(metric, out double value))
+                {
+                    return value;
+                }
+                else
+                {
+                    var key = this.Metrics.Keys.FirstOrDefault(k => k.Equals(metric, StringComparison.OrdinalIgnoreCase));
+                    if (key != null)
+                    {
+                        return this.Metrics[key];
+                    }
+                    else
+                    {
+                        // If not found, return 0.0
+                        return 0.0;
+                    }
+                }
+            }
+            set
+            {
+                // Find by tolower case
+                if (this.Metrics.ContainsKey(metric))
+                {
+                    this.Metrics[metric] = value;
+                }
+                else
+                {
+                    var key = this.Metrics.Keys.FirstOrDefault(k => k.Equals(metric, StringComparison.OrdinalIgnoreCase));
+                    if (key != null)
+                    {
+                        this.Metrics[key] = value;
+                    }
+                    else
+                    {
+                        // Capitalize first letter and add to dictionary
+                        string capitalizedMetric = char.ToUpper(metric[0]) + metric.Substring(1).ToLowerInvariant();
+                        this.Metrics.Add(capitalizedMetric, value);
+                    }
+                }
+            }
+        }
 
-						var tagTextFrame = TagLib.Id3v2.TextInformationFrame.Get(id3v2Tag, tag, false);
 
-						if (tagTextFrame != null && tagTextFrame.Text.Any())
-						{
-							string bpmString = tagTextFrame.Text.FirstOrDefault() ?? "0,0";
-							if (!string.IsNullOrEmpty(bpmString))
-							{
-								bpmString = bpmString.Replace(',', '.');
+        public float ReadBeatsPerMinuteTag(string tag = "TBPM", bool set = true)
+        {
+            // Read bpm metadata if available
+            float bpm = 0.0f;
+            float roughBeatsPerMinute = 0.0f;
 
-								if (float.TryParse(bpmString, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedBeatsPerMinute))
-								{
-									bpm = parsedBeatsPerMinute;
-								}
-							}
-						}
-						else
-						{
-							bpm = 0.0f;
-						}
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				Debug.WriteLine($"Fehler beim Lesen des Tags {tag.ToUpper()}: {ex.Message} ({ex.InnerException?.Message ?? " - "})");
-			}
+            try
+            {
+                if (!string.IsNullOrEmpty(this.FilePath) && File.Exists(this.FilePath))
+                {
+                    using var file = TagLib.File.Create(this.FilePath);
+                    if (file.Tag.BeatsPerMinute > 0)
+                    {
+                        roughBeatsPerMinute = file.Tag.BeatsPerMinute;
+                    }
+                    if (file.TagTypes.HasFlag(TagLib.TagTypes.Id3v2))
+                    {
+                        var id3v2Tag = (TagLib.Id3v2.Tag) file.GetTag(TagLib.TagTypes.Id3v2);
 
-			// Take rough bpm if <= 0.0f
-			if (bpm <= 0.0f && roughBeatsPerMinute > 0.0f)
-			{
-				Console.WriteLine($"No value found for '{tag.ToUpper()}', taking rough BPM value from legacy tag.");
-				bpm = roughBeatsPerMinute;
-			}
+                        var tagTextFrame = TagLib.Id3v2.TextInformationFrame.Get(id3v2Tag, tag, false);
 
-			if (set)
-			{
-				this.BeatsPerMinute = bpm;
-				if (this.BeatsPerMinute <= 10)
-				{
-					this.ReadBeatsPerMinuteTagLegacy();
-				}
-			}
+                        if (tagTextFrame != null && tagTextFrame.Text.Any())
+                        {
+                            string bpmString = tagTextFrame.Text.FirstOrDefault() ?? "0,0";
+                            if (!string.IsNullOrEmpty(bpmString))
+                            {
+                                bpmString = bpmString.Replace(',', '.');
 
-			return bpm;
-		}
+                                if (float.TryParse(bpmString, NumberStyles.Any, CultureInfo.InvariantCulture, out float parsedBeatsPerMinute))
+                                {
+                                    bpm = parsedBeatsPerMinute;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            bpm = 0.0f;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Fehler beim Lesen des Tags {tag.ToUpper()}: {ex.Message} ({ex.InnerException?.Message ?? " - "})");
+            }
 
-		public double ReadBeatsPerMinuteTagLegacy()
-		{
-			// Read bpm metadata if available
-			float bpm = 0.0f;
+            // Take rough bpm if <= 0.0f
+            if (bpm <= 0.0f && roughBeatsPerMinute > 0.0f)
+            {
+                Console.WriteLine($"No value found for '{tag.ToUpper()}', taking rough BPM value from legacy tag.");
+                bpm = roughBeatsPerMinute;
+            }
 
-			try
-			{
-				if (!string.IsNullOrEmpty(this.FilePath) && File.Exists(this.FilePath))
-				{
-					using var file = TagLib.File.Create(this.FilePath);
-					// Check for BPM in standard ID3v2 tag
-					if (file.Tag.BeatsPerMinute > 0)
-					{
-						bpm = file.Tag.BeatsPerMinute;
-					}
-					// Alternative für spezielle Tags (z.B. TBPM Frame)
-					else if (file.TagTypes.HasFlag(TagLib.TagTypes.Id3v2))
-					{
-						var id3v2Tag = (TagLib.Id3v2.Tag) file.GetTag(TagLib.TagTypes.Id3v2);
-						var bpmFrame = TagLib.Id3v2.UserTextInformationFrame.Get(id3v2Tag, "BPM", false);
+            if (set)
+            {
+                this.BeatsPerMinute = bpm;
+                if (this.BeatsPerMinute <= 10)
+                {
+                    this.ReadBeatsPerMinuteTagLegacy();
+                }
+            }
 
-						if (bpmFrame != null && float.TryParse(bpmFrame.Text.FirstOrDefault(), out float parsedBeatsPerMinute))
-						{
-							bpm = parsedBeatsPerMinute;
-						}
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				Debug.WriteLine($"Fehler beim Lesen der BPM: {ex.Message}");
-			}
-			this.BeatsPerMinute = bpm > 0 ? bpm / 100.0f : 0.0f;
-			return this.BeatsPerMinute;
-		}
+            return bpm;
+        }
 
-		public string GetMetaString(bool raw = false)
-		{
-			// List SampleRate, Channels, BitDepth, Length, SizeInMb (with Environment.NewLine if !raw)
-			StringBuilder sb = new();
-			string newLine = raw ? " | " : Environment.NewLine;
-			sb.Append($"SR: {this.SampleRate} Hz{newLine}");
-			sb.Append($"CH: {this.Channels}{newLine}");
-			sb.Append($"Bits: {this.BitDepth} bit{newLine}");
-			sb.Append(newLine);
-			sb.Append($"Length: {this.LengthSamples:0.##} f32{newLine}");
-			sb.Append($"Size: {this.SizeInMb:0.##} MB");
-			sb.Append(newLine);
-			double bpm = this.BeatsPerMinute > 1 ? this.BeatsPerMinute : this.ScannedBeatsPerMinute > 0 ? this.ScannedBeatsPerMinute : 0.0;
-			bool scanned = this.ScannedBeatsPerMinute > 0 && this.ScannedBeatsPerMinute != this.BeatsPerMinute;
-			sb.Append($"BPM: {bpm:0.##} bpm{(scanned ? " (scan)" : "")}{newLine}");
-			return sb.ToString();
-		}
+        public double ReadBeatsPerMinuteTagLegacy()
+        {
+            // Read bpm metadata if available
+            float bpm = 0.0f;
 
-	}
+            try
+            {
+                if (!string.IsNullOrEmpty(this.FilePath) && File.Exists(this.FilePath))
+                {
+                    using var file = TagLib.File.Create(this.FilePath);
+                    // Check for BPM in standard ID3v2 tag
+                    if (file.Tag.BeatsPerMinute > 0)
+                    {
+                        bpm = file.Tag.BeatsPerMinute;
+                    }
+                    // Alternative für spezielle Tags (z.B. TBPM Frame)
+                    else if (file.TagTypes.HasFlag(TagLib.TagTypes.Id3v2))
+                    {
+                        var id3v2Tag = (TagLib.Id3v2.Tag) file.GetTag(TagLib.TagTypes.Id3v2);
+                        var bpmFrame = TagLib.Id3v2.UserTextInformationFrame.Get(id3v2Tag, "BPM", false);
+
+                        if (bpmFrame != null && float.TryParse(bpmFrame.Text.FirstOrDefault(), out float parsedBeatsPerMinute))
+                        {
+                            bpm = parsedBeatsPerMinute;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Fehler beim Lesen der BPM: {ex.Message}");
+            }
+            this.BeatsPerMinute = bpm > 0 ? bpm / 100.0f : 0.0f;
+            return this.BeatsPerMinute;
+        }
+
+        public string GetMetaString(bool raw = false)
+        {
+            // List SampleRate, Channels, BitDepth, Length, SizeInMb (with Environment.NewLine if !raw)
+            StringBuilder sb = new();
+            string newLine = raw ? " | " : Environment.NewLine;
+            sb.Append($"SR: {this.SampleRate} Hz{newLine}");
+            sb.Append($"CH: {this.Channels}{newLine}");
+            sb.Append($"Bits: {this.BitDepth} bit{newLine}");
+            sb.Append(newLine);
+            sb.Append($"Length: {this.LengthSamples:0.##} f32{newLine}");
+            sb.Append($"Size: {this.SizeInMb:0.##} MB");
+            sb.Append(newLine);
+            double bpm = this.BeatsPerMinute > 1 ? this.BeatsPerMinute : this.ScannedBeatsPerMinute > 0 ? this.ScannedBeatsPerMinute : 0.0;
+            bool scanned = this.ScannedBeatsPerMinute > 0 && this.ScannedBeatsPerMinute != this.BeatsPerMinute;
+            sb.Append($"BPM: {bpm:0.##} bpm{(scanned ? " (scan)" : "")}{newLine}");
+            return sb.ToString();
+        }
+
+    }
 }
