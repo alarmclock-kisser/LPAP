@@ -239,7 +239,11 @@ namespace LPAP.Forms.Dialogs
                     else if (argType == typeof(bool))
                     {
                         input = new CheckBox();
-                    }
+                        if (this.SelectedMethod?.GetParameters().FirstOrDefault(p => p.Name?.Equals(argName, StringComparison.OrdinalIgnoreCase) == true)?.DefaultValue is bool defBool)
+                        {
+                            ((CheckBox)input).Checked = defBool;
+						}
+					}
                     else if (argType.IsEnum)
                     {
                         var combo = new ComboBox
