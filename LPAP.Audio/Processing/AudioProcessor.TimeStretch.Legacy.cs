@@ -1,156 +1,239 @@
 ﻿using MathNet.Numerics.IntegralTransforms;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
-using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LPAP.Audio.Processing
 {
     public static partial class AudioProcessor
     {
         /// <summary>
-        /// Legacy PPFFT time stretcher (ported from CpuExecutioner) with strict worker limiting.
-        /// NOTE: This method is NOT async (no await/async keyword) but returns Task&lt;AudioObj&gt; like your other stretchers.
-        /// maxWorkers: 0 = use all threads (Environment.ProcessorCount). Values &lt; 0 treated as 0. Values &gt; CPU count are clamped.
+        /// Thread-pool-freundliche Variante: nutzt einen eigenen, begrenzten Worker-Pool (dedicated threads),
+        /// damit High-Priority Playback / UI nicht verhungern.
+        /// maxWorkers: 0 => CPUCount, sonst clamp 1..CPUCount.
+        /// progress: 0.0 .. 1.0
+        ///
+        /// NOTE: public API ohne async-keyword (Task-only). Core läuft intern async.
         /// </summary>
-        public static Task<AudioObj> TimeStretchParallel_V0_Legacy(
+        public static Task<AudioObj> TimeStretchParallelAsync_V0_Legacy(
             AudioObj obj,
-            double factor = 1.0,
             int chunkSize = 16384,
             float overlap = 0.5f,
+            double factor = 1.0,
             bool keepData = false,
             float normalize = 1.0f,
             int maxWorkers = 0,
-            IProgress<double>? progress = null)
+            IProgress<double>? progress = null,
+            CancellationToken ct = default)
         {
-            // Keep method non-async but still non-blocking for UI: do the work on one background task.
-            return Task.Run(() =>
-            {
-                if (obj == null)
-                {
-                    throw new ArgumentNullException(nameof(obj));
-                }
-
-                if (obj.Data == null || obj.Data.Length == 0)
-                {
-                    return obj;
-                }
-
-                if (obj.SampleRate <= 0 || obj.Channels <= 0)
-                {
-                    return obj;
-                }
-
-                // Validate/normalize params
-                overlap = Math.Clamp(overlap, 0.05f, 0.95f);
-                factor = Math.Clamp(factor, 0.05, 20.0);
-
-                int cpu = Math.Max(1, Environment.ProcessorCount);
-                if (maxWorkers < 0) maxWorkers = 0;
-
-                // 0 => all threads
-                int workers = (maxWorkers == 0)
-                    ? cpu
-                    : Math.Clamp(maxWorkers, 1, cpu);
-
-                float[] backupData = obj.Data;
-                int sampleRate = obj.SampleRate;
-                int overlapSize = obj.OverlapSize;
-
-                try
-                {
-                    // Chunking (repo schema; sync wait)
-                    var chunkEnumerable = obj.GetChunksAsync(chunkSize, overlap, keepData, workers)
-                        .GetAwaiter().GetResult();
-
-                    var chunks = chunkEnumerable as IList<float[]> ?? chunkEnumerable.ToList();
-                    if (chunks.Count == 0)
-                    {
-                        obj.Data = backupData;
-                        return obj;
-                    }
-
-                    var tracker = CreateTracker(progress, chunks.Count, includeNormalize: normalize > 0);
-                    tracker?.ReportWork(chunks.Count); // chunking stage
-
-                    // Stage 1: FFT (worker-limited)
-                    Complex[][] fftChunks = new Complex[chunks.Count][];
-                    {
-                        var po = new ParallelOptions { MaxDegreeOfParallelism = workers };
-                        Parallel.For(0, chunks.Count, po, i =>
-                        {
-                            fftChunks[i] = FourierTransformForward_Sync(chunks[i]);
-                            tracker?.ReportWork(1);
-                        });
-                    }
-
-                    // Stage 2: Stretch in frequency domain (worker-limited)
-                    Complex[][] stretchChunks = new Complex[fftChunks.Length][];
-                    {
-                        var po = new ParallelOptions { MaxDegreeOfParallelism = workers };
-                        Parallel.For(0, fftChunks.Length, po, i =>
-                        {
-                            stretchChunks[i] = StretchChunk_Sync(fftChunks[i], chunkSize, overlapSize, sampleRate, factor);
-                            tracker?.ReportWork(1);
-                        });
-                    }
-
-                    // Stage 3: IFFT (worker-limited)
-                    float[][] ifftChunks = new float[stretchChunks.Length][];
-                    {
-                        var po = new ParallelOptions { MaxDegreeOfParallelism = workers };
-                        Parallel.For(0, stretchChunks.Length, po, i =>
-                        {
-                            ifftChunks[i] = FourierTransformInverse_Sync(stretchChunks[i]);
-                            tracker?.ReportWork(1);
-                        });
-                    }
-
-                    // Stage 4: Aggregate back (repo schema; sync wait)
-                    obj.StretchFactor = factor;
-                    obj.AggregateStretchedChunksAsync(ifftChunks, factor, workers)
-                        .GetAwaiter().GetResult();
-                    tracker?.ReportWork(chunks.Count);
-
-                    if (obj.Data == null || obj.Data.LongLength <= 0)
-                    {
-                        obj.Data = backupData;
-                        return obj;
-                    }
-
-                    // BPM adjust (match your other stretchers)
-                    if (obj.BeatsPerMinute > 0.0f && factor > 0.0)
-                    {
-                        obj.BeatsPerMinute = (float) (obj.BeatsPerMinute / factor);
-                    }
-
-                    // Stage 5: Normalize (optional; repo schema; sync wait)
-                    if (normalize > 0.0f)
-                    {
-                        obj.NormalizeAsync(normalize, workers)
-                            .GetAwaiter().GetResult();
-                        tracker?.ReportWork(chunks.Count);
-                    }
-
-                    tracker?.Complete();
-                    progress?.Report(1.0);
-
-                    return obj;
-                }
-                catch
-                {
-                    // safety: restore original data if anything explodes
-                    obj.Data = backupData;
-                    throw;
-                }
-            });
+            // Keine async Signatur – nur weiterreichen.
+            return TimeStretchMostThreadsCoreAsync(obj, chunkSize, overlap, factor, keepData, normalize, maxWorkers, progress, ct);
         }
 
-        // -----------------------------------------------------------------------------------------
-        // Legacy helpers (SYNC on purpose so Parallel.For controls concurrency)
-        // -----------------------------------------------------------------------------------------
+        private static async Task<AudioObj> TimeStretchMostThreadsCoreAsync(
+            AudioObj obj,
+            int chunkSize,
+            float overlap,
+            double factor,
+            bool keepData,
+            float normalize,
+            int maxWorkers,
+            IProgress<double>? progress,
+            CancellationToken ct)
+        {
+            if (obj == null) throw new ArgumentNullException(nameof(obj));
+            if (chunkSize <= 0) throw new ArgumentOutOfRangeException(nameof(chunkSize));
+            if (overlap < 0f || overlap >= 1f) throw new ArgumentOutOfRangeException(nameof(overlap));
+            if (factor <= 0) throw new ArgumentOutOfRangeException(nameof(factor));
 
-        private static Complex[] FourierTransformForward_Sync(float[] samples)
+            int cpuCount = Environment.ProcessorCount;
+            int workers = maxWorkers <= 0 ? cpuCount : Math.Clamp(maxWorkers, 1, cpuCount);
+
+            float[] backupData = obj.Data;
+            int sampleRate = obj.SampleRate;
+            int overlapSize = obj.OverlapSize;
+
+            var sw = Stopwatch.StartNew();
+
+            // Weights for global progress (sum = 1.0)
+            const double wChunk = 0.05;
+            const double wFft = 0.25;
+            const double wStretch = 0.30;
+            const double wIfft = 0.25;
+            const double wAgg = 0.10;
+            const double wNorm = 0.05;
+
+            double pChunk = 0, pFft = 0, pStretch = 0, pIfft = 0, pAgg = 0, pNorm = 0;
+            void Report()
+            {
+                double total =
+                    pChunk * wChunk +
+                    pFft * wFft +
+                    pStretch * wStretch +
+                    pIfft * wIfft +
+                    pAgg * wAgg +
+                    pNorm * wNorm;
+
+                if (total < 0) total = 0;
+                if (total > 1) total = 1;
+                progress?.Report(total);
+            }
+
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // 1) Chunking
+                var chunks = await obj.GetChunksAsync(chunkSize, overlap, keepData).ConfigureAwait(false);
+
+                // wichtig: materialisieren, damit Count/Index billig ist
+                if (chunks == null)
+                {
+                    obj.Data = backupData;
+                    progress?.Report(1.0);
+                    return obj;
+                }
+
+                var chunkList = chunks as IReadOnlyList<float[]> ?? (chunks is List<float[]> l ? l : new List<float[]>(chunks));
+                int n = chunkList.Count;
+
+                if (n == 0)
+                {
+                    obj.Data = backupData;
+                    progress?.Report(1.0);
+                    return obj;
+                }
+
+                pChunk = 1.0; Report();
+                obj["chunk"] = sw.Elapsed.TotalMilliseconds;
+                sw.Restart();
+
+                // 2) FFT
+                var fftChunks = new Complex[n][];
+                using (var pool = new FixedWorkerPool(workers, ThreadPriority.BelowNormal, "TS-FFT"))
+                {
+                    int done = 0;
+                    var tasks = new Task[n];
+
+                    for (int i = 0; i < n; i++)
+                    {
+                        int idx = i;
+                        tasks[i] = pool.Run(() =>
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            fftChunks[idx] = FourierTransformForward(chunkList[idx]);
+                            int d = Interlocked.Increment(ref done);
+                            pFft = (double) d / n;
+                            Report();
+                        }, ct);
+                    }
+
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+
+                obj["fft"] = sw.Elapsed.TotalMilliseconds;
+                sw.Restart();
+
+                // 3) Stretch
+                var stretchChunks = new Complex[n][];
+                using (var pool = new FixedWorkerPool(workers, ThreadPriority.BelowNormal, "TS-Stretch"))
+                {
+                    int done = 0;
+                    var tasks = new Task[n];
+
+                    for (int i = 0; i < n; i++)
+                    {
+                        int idx = i;
+                        tasks[i] = pool.Run(() =>
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            stretchChunks[idx] = StretchChunk(fftChunks[idx], chunkSize, overlapSize, sampleRate, factor);
+                            int d = Interlocked.Increment(ref done);
+                            pStretch = (double) d / n;
+                            Report();
+                        }, ct);
+                    }
+
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+
+                obj["stretch"] = sw.Elapsed.TotalMilliseconds;
+                sw.Restart();
+
+                // 4) IFFT
+                var ifftChunks = new float[n][];
+                using (var pool = new FixedWorkerPool(workers, ThreadPriority.BelowNormal, "TS-IFFT"))
+                {
+                    int done = 0;
+                    var tasks = new Task[n];
+
+                    for (int i = 0; i < n; i++)
+                    {
+                        int idx = i;
+                        tasks[i] = pool.Run(() =>
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            ifftChunks[idx] = FourierTransformInverse(stretchChunks[idx]);
+                            int d = Interlocked.Increment(ref done);
+                            pIfft = (double) d / n;
+                            Report();
+                        }, ct);
+                    }
+
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+
+                obj["ifft"] = sw.Elapsed.TotalMilliseconds;
+                sw.Restart();
+
+                // 5) Aggregate
+                ct.ThrowIfCancellationRequested();
+                await obj.AggregateStretchedChunksAsync(ifftChunks, factor).ConfigureAwait(false);
+                pAgg = 1.0; Report();
+
+                if (obj.Data.LongLength <= 0)
+                {
+                    obj.Data = backupData;
+                    progress?.Report(1.0);
+                    return obj;
+                }
+
+                obj["aggregate"] = sw.Elapsed.TotalMilliseconds;
+                sw.Restart();
+
+                // 6) Normalize
+                if (normalize > 0)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await obj.NormalizeAsync(normalize).ConfigureAwait(false);
+                }
+
+                pNorm = 1.0; Report();
+                obj["normalize"] = sw.Elapsed.TotalMilliseconds;
+
+                obj.StretchFactor = factor;
+                obj.BeatsPerMinute = obj.BeatsPerMinute / factor;
+
+                progress?.Report(1.0);
+                return obj;
+            }
+            catch (OperationCanceledException)
+            {
+                obj.Data = backupData;
+                throw;
+            }
+            catch
+            {
+                obj.Data = backupData;
+                throw;
+            }
+        }
+
+        private static Complex[] FourierTransformForward(float[] samples)
         {
             var complexSamples = new Complex[samples.Length];
             for (int i = 0; i < samples.Length; i++)
@@ -162,25 +245,22 @@ namespace LPAP.Audio.Processing
             return complexSamples;
         }
 
-        private static float[] FourierTransformInverse_Sync(Complex[] samples)
+        private static float[] FourierTransformInverse(Complex[] samples)
         {
             Fourier.Inverse(samples, FourierOptions.Matlab);
 
-            var dst = new float[samples.Length];
+            var outSamples = new float[samples.Length];
             for (int i = 0; i < samples.Length; i++)
             {
-                dst[i] = (float) samples[i].Real;
+                outSamples[i] = (float) samples[i].Real;
             }
 
-            return dst;
+            return outSamples;
         }
 
-        private static Complex[] StretchChunk_Sync(Complex[] samples, int chunkSize, int overlapSize, int sampleRate, double factor)
+        private static Complex[] StretchChunk(Complex[] samples, int chunkSize, int overlapSize, int sampleRate, double factor)
         {
-            // Direct port of CpuExecutioner.StretchChunkAsync algorithm (but sync).
             int hopIn = chunkSize - overlapSize;
-            _ = (int) (hopIn * factor + 0.5); // hopOut computed in old code but not used in its loop
-
             int totalBins = chunkSize;
             int totalChunks = samples.Length / chunkSize;
 
@@ -188,12 +268,15 @@ namespace LPAP.Audio.Processing
 
             for (int chunk = 0; chunk < totalChunks; chunk++)
             {
+                int chunkBase = chunk * chunkSize;
+                int prevBase = (chunk > 0) ? (chunk - 1) * chunkSize : chunkBase;
+
                 for (int bin = 0; bin < totalBins; bin++)
                 {
-                    int idx = chunk * chunkSize + bin;
-                    int prevIdx = (chunk > 0) ? (chunk - 1) * chunkSize + bin : idx;
+                    int idx = chunkBase + bin;
+                    int prevIdx = prevBase + bin;
 
-                    if (bin >= totalBins || chunk == 0)
+                    if (chunk == 0)
                     {
                         output[idx] = samples[idx];
                         continue;
@@ -206,12 +289,13 @@ namespace LPAP.Audio.Processing
                     float phasePrev = (float) Math.Atan2(prev.Imaginary, prev.Real);
                     float mag = (float) Math.Sqrt(cur.Real * cur.Real + cur.Imaginary * cur.Imaginary);
 
-                    float deltaPhase = phaseCur - phasePrev;
                     float freqPerBin = (float) sampleRate / chunkSize;
                     float expectedPhaseAdv = 2.0f * (float) Math.PI * freqPerBin * bin * hopIn / sampleRate;
 
+                    float deltaPhase = phaseCur - phasePrev;
                     float delta = deltaPhase - expectedPhaseAdv;
-                    delta = (float) (delta + Math.PI) % (2.0f * (float) Math.PI) - (float) Math.PI;
+
+                    delta = (float) ((delta + Math.PI) % (2.0f * Math.PI) - Math.PI);
 
                     float phaseOut = phasePrev + expectedPhaseAdv + (float) (delta * factor);
 
@@ -220,6 +304,96 @@ namespace LPAP.Audio.Processing
             }
 
             return output;
+        }
+
+        private sealed class FixedWorkerPool : IDisposable
+        {
+            private readonly BlockingCollection<WorkItem> _queue = new();
+            private readonly Thread[] _threads;
+
+            private readonly struct WorkItem
+            {
+                public readonly Action Action;
+                public readonly TaskCompletionSource<bool> Tcs;
+                public readonly CancellationToken Ct;
+
+                public WorkItem(Action action, TaskCompletionSource<bool> tcs, CancellationToken ct)
+                {
+                    Action = action;
+                    Tcs = tcs;
+                    Ct = ct;
+                }
+            }
+
+            public FixedWorkerPool(int workerCount, ThreadPriority threadPriority, string threadNamePrefix)
+            {
+                if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
+
+                _threads = new Thread[workerCount];
+                for (int i = 0; i < workerCount; i++)
+                {
+                    int idx = i;
+                    _threads[i] = new Thread(WorkerLoop)
+                    {
+                        IsBackground = true,
+                        Priority = threadPriority,
+                        Name = $"{threadNamePrefix}-{idx}"
+                    };
+                    _threads[i].Start();
+                }
+            }
+
+            public Task Run(Action action, CancellationToken ct)
+            {
+                if (action == null) throw new ArgumentNullException(nameof(action));
+
+                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                if (ct.IsCancellationRequested)
+                {
+                    tcs.TrySetCanceled(ct);
+                    return tcs.Task;
+                }
+
+                _queue.Add(new WorkItem(action, tcs, ct));
+                return tcs.Task;
+            }
+
+            private void WorkerLoop()
+            {
+                foreach (var item in _queue.GetConsumingEnumerable())
+                {
+                    if (item.Ct.IsCancellationRequested)
+                    {
+                        item.Tcs.TrySetCanceled(item.Ct);
+                        continue;
+                    }
+
+                    try
+                    {
+                        item.Action();
+                        item.Tcs.TrySetResult(true);
+                    }
+                    catch (OperationCanceledException oce)
+                    {
+                        item.Tcs.TrySetCanceled(oce.CancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        item.Tcs.TrySetException(ex);
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                _queue.CompleteAdding();
+                foreach (var t in _threads)
+                {
+                    try { t.Join(); } catch { /* ignore */ }
+                }
+                _queue.Dispose();
+            }
         }
     }
 }
