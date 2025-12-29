@@ -178,13 +178,26 @@ namespace LPAP.Audio
             sb.Append($"Bits: {this.BitDepth} bit{newLine}");
             sb.Append(newLine);
             sb.Append($"Length: {this.LengthSamples:0.##} f32{newLine}");
-            sb.Append($"Size: {this.SizeInMb:0.##} MB");
-            sb.Append(newLine);
+            sb.Append($"Size: {this.SizeInMb:0.##} MB{newLine}");
+            sb.AppendLine($"Form: {this.Form}{newLine}");
+            sb.AppendLine($"Pointer = {this.Pointer}{newLine}");
+			sb.Append(newLine);
             double bpm = this.BeatsPerMinute > 1 ? this.BeatsPerMinute : this.ScannedBeatsPerMinute > 0 ? this.ScannedBeatsPerMinute : 0.0;
             bool scanned = this.ScannedBeatsPerMinute > 0 && this.ScannedBeatsPerMinute != this.BeatsPerMinute;
             sb.Append($"BPM: {bpm:0.##} bpm{(scanned ? " (scan)" : "")}{newLine}");
             return sb.ToString();
         }
 
-    }
+        public string GetMetricsString(bool raw = false)
+        {
+            StringBuilder sb = new();
+            string newLine = raw ? " | " : Environment.NewLine;
+            foreach (var kvp in this.Metrics)
+            {
+                sb.Append($"{kvp.Key}: {kvp.Value:0.##} s{newLine}");
+            }
+            return sb.ToString();
+		}
+
+	}
 }

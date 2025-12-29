@@ -239,7 +239,11 @@ namespace LPAP.Forms.Dialogs
                     else if (argType == typeof(bool))
                     {
                         input = new CheckBox();
-                    }
+                        if (this.SelectedMethod?.GetParameters().FirstOrDefault(p => p.Name?.Equals(argName, StringComparison.OrdinalIgnoreCase) == true)?.DefaultValue is bool defBool)
+                        {
+                            ((CheckBox)input).Checked = defBool;
+						}
+					}
                     else if (argType.IsEnum)
                     {
                         var combo = new ComboBox
@@ -478,7 +482,7 @@ namespace LPAP.Forms.Dialogs
             return $"{m}:{s:00}m";
         }
 
-        private static void NumericUpDown_RegisterPow2(NumericUpDown numeric)
+        internal static void NumericUpDown_RegisterPow2(NumericUpDown numeric)
         {
             TimeStretchDialog.Pow2NumericUpdowns[numeric] = (int) numeric.Value;
             numeric.ValueChanged += (s, e) =>
@@ -487,7 +491,11 @@ namespace LPAP.Forms.Dialogs
                 int curr = (int) numeric.Value;
                 if (curr > prev)
                 {
-                    numeric.Value = Math.Clamp(prev * 2, numeric.Minimum, numeric.Maximum);
+                    if (prev <= 0)
+                    {
+                        prev = 1;
+					}
+					numeric.Value = Math.Clamp(prev * 2, numeric.Minimum, numeric.Maximum);
 
                 }
                 else

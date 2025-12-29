@@ -6,10 +6,13 @@ extern "C" __global__ void timestretch01(
     const float2* input,
     float2* output,
     const int chunkSize,
-    const int overlapSize,
+    const float overlap,
     const int samplerate,
     const double factor)
 {
+    // Clamp overlap to [0, 1)
+    float ov = (overlap < 0.0f) ? 0.0f : ((overlap >= 1.0f) ? 0.9999f : overlap);
+    int overlapSize = (int)(ov * chunkSize);
     int bin = blockIdx.x * blockDim.x + threadIdx.x;
     int chunk = blockIdx.y * blockDim.y + threadIdx.y;
 

@@ -8,4 +8,13 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="TorchSharp" Version="0.105.2" />
+    <PackageReference Include="TorchSharp-cuda-windows" Version="0.105.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LPAP.Audio\LPAP.Audio.csproj" />
+  </ItemGroup>
+
 </Project>

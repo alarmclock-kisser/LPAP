@@ -4,9 +4,11 @@ using ManagedCuda.BasicTypes;
 using ManagedCuda.VectorTypes;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using static ManagedCuda.DriverAPINativeMethods;
 
 namespace LPAP.Cuda
 {
@@ -601,7 +603,72 @@ namespace LPAP.Cuda
             }
         }
 
-        public object GetDefaultArgValue(Type type, string name, AudioObj? audio)
+		public bool GetKernelNeedFourierTransform(string kernelName)
+		{
+			// In-Place, Out-of-Place, GetValue, GetData
+			if (string.IsNullOrWhiteSpace(kernelName) || this.Compiler == null)
+			{
+				return false;
+			}
+
+			try
+			{
+				var args = this.Compiler.GetArguments(kernelName);
+				if (args == null || args.Count == 0)
+				{
+					return false;
+				}
+
+				// Sammle Pointer-Argumente in stabiler Reihenfolge (Dictionary behält Insertion-Order)
+				var ptrArgs = args
+					.Where(kv => kv.Value?.IsPointer == true)
+					.ToList();
+
+				if (ptrArgs.Count <= 0)
+				{
+					return false;
+				}
+
+				// Wähle bevorzugt den Eingabe-Pointer anhand des Namens, sonst nimm den ersten
+				static bool LooksLikeInput(string name)
+				{
+					if (string.IsNullOrWhiteSpace(name))
+					{
+						return false;
+					}
+
+					name = name.ToLowerInvariant();
+					return name.Contains("in") || name.Contains("input") || name.Contains("src");
+				}
+
+				var firstPtr = ptrArgs.FirstOrDefault(kv => LooksLikeInput(kv.Key));
+				if (EqualityComparer<KeyValuePair<string, Type>>.Default.Equals(firstPtr, default))
+				{
+					firstPtr = ptrArgs[0];
+				}
+
+				// Prüfe auf float2*
+				var elemType = firstPtr.Value.GetElementType();
+				if (elemType == typeof(ManagedCuda.VectorTypes.float2))
+				{
+					return true;
+				}
+
+				// Optional: Wenn nicht eindeutig, prüfe alle Pointer-Args (falls Kernel ausschließlich im Frequenzbereich arbeitet)
+				if (ptrArgs.Any(kv => kv.Value.GetElementType() == typeof(ManagedCuda.VectorTypes.float2)))
+				{
+					return true;
+				}
+
+				return false;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
+		public object GetDefaultArgValue(Type type, string name, AudioObj? audio)
         {
             object val = 0;
 
@@ -657,9 +724,675 @@ namespace LPAP.Cuda
         }
 
 
+        public async Task<IntPtr?> ExecuteCufftAsync(AudioObj audio, int chunkSize = 0, float overlap = 0f, bool asMany = false, IProgress<double>? progress = null)
+        {
+            // Verify CUDA online
+            if (!this.Initialized || this.Register == null || this.Fourier == null || this.Context == null)
+            {
+                CudaLog.Warn("CUDA not initialized! CUFFT execution aborted.");
+                return null;
+            }
+
+            Stopwatch sw = Stopwatch.StartNew();
+			// If already in frequency domain, IFFT + Pull
+			if (audio.Form == "c" && audio.Pointer != IntPtr.Zero)
+            {
+                var ifftPtr = asMany ? await this.Fourier.PerformIfftManyAsync(audio.Pointer, false, progress) : await this.Fourier.PerformIfftAsync(audio.Pointer, false, progress);
+                audio.Pointer = ifftPtr;
+                audio.Form = "f";
+                audio["__cudaIfft_ms"] = sw.Elapsed.TotalMilliseconds;
+
+				var mem = this.Register[ifftPtr];
+                if (mem == null)
+                {
+                    CudaLog.Error("Failed to perform IFFT on audio data.");
+                    return null;
+				}
+
+                if (mem.ElementType == typeof(float))
+                {
+                    if (mem.Count == 1)
+                    {
+                        audio.Data = await this.Register.PullDataAsync<float>(ifftPtr);
+                    }
+                    else
+                    {
+                        var chunks = await this.Register.PullChunksAsync<float>(ifftPtr);
+                        await audio.AggregateStretchedChunksAsync(chunks);
+					}
+                    ifftPtr = IntPtr.Zero;
+					await audio.NormalizeAsync(1);
+				}
+                else
+                {
+                    CudaLog.Error("IFFT output memory type is not float.");
+                    return null;
+                }
+
+                CudaLog.Info("Performed IFFT on audio data.");
+
+				return ifftPtr;
+            }
+            else if (audio.Form == "f")
+            {
+                CudaMem? mem = null;
+                if (audio.Pointer == IntPtr.Zero && audio.Data.LongLength > 0)
+                {
+                    if (chunkSize <= 0)
+                    {
+                        mem = await this.Register.PushDataAsync(audio.Data);
+                        audio.Data = [];
+                    }
+                    else
+                    {
+                        var chunks = await audio.GetChunksAsync(chunkSize, overlap, 0, true);
+                        mem = await this.Register.PushChunksAsync(chunks);
+                    }
+                }
+                else if (audio.Pointer != IntPtr.Zero)
+                {
+                    mem = this.Register[audio.Pointer];
+                }
+                if (mem == null)
+                {
+                    CudaLog.Error("Failed to allocate memory for audio data.");
+                    return null;
+				}
+
+                var fftPtr = asMany ? await this.Fourier.PerformFftManyAsync(mem.IndexPointer, false, progress) : await this.Fourier.PerformFftAsync(mem.IndexPointer, false, progress);
+                audio.Pointer = fftPtr;
+                audio.Form = "c";
+                audio["__cudaFft_ms"] = sw.Elapsed.TotalMilliseconds;
+
+				mem = this.Register[fftPtr];
+                if (mem == null)
+                {
+                    CudaLog.Error("Failed to perform FFT on audio data.");
+                    return null;
+                }
+
+                CudaLog.Info("Performed FFT on audio data.");
+
+				return fftPtr;
+            }
+            else
+            {
+                CudaLog.Warn("AudioObj is neither in time nor frequency domain. CUFFT execution aborted.");
+                return null;
+			}
+        }
 
 
-        public async Task ExecuteAudioKernelInPlaceAsync(
+		public async Task<AudioObj?> ExecuteAudioKernelAutoAsync(
+	AudioObj audio,
+	string kernelName,
+	int chunkSize = 0,
+	float overlap = 0f,
+	double? stretchFactor = null,
+	Dictionary<string, object>? arguments = null,
+	bool workingCopy = false,
+	IProgress<double>? progress = null,
+	CancellationToken ct = default)
+		{
+			// Verify CUDA online
+			if (!this.Initialized || this.Register == null || this.Compiler == null || this.Launcher == null || this.Context == null || this.Fourier == null)
+			{
+				CudaLog.Warn("CUDA not initialized! Kernel execution aborted.", kernelName);
+				return null;
+			}
+
+			// Ensure context on this thread (important when called from threadpool)
+			this.Context.SetCurrent();
+
+			// Verify kernel args
+			var argDefs = this.Compiler.GetArguments(kernelName);
+			if (argDefs == null || argDefs.Count == 0)
+			{
+				CudaLog.Warn("Kernel argument parsing failed (no args).", kernelName);
+				return null;
+			}
+
+			audio = workingCopy ? await audio.CloneAsync(true, ct).ConfigureAwait(false) : audio;
+
+			// Local helper: run an in-place float kernel (float* data, int n) over all chunks and sync.
+			async Task<bool> RunFloatInplacePerChunkKernelAsync(
+				string kName,
+				CudaMem m,
+				IProgress<double>? localProgress,
+				double phaseStart,
+				double phaseSpan)
+			{
+				// Must be float time-domain
+				if (m.ElementType != typeof(float))
+				{
+					CudaLog.Warn($"Skip '{kName}' because mem.ElementType is {m.ElementType.Name} (expected float).", kernelName);
+					return false;
+				}
+
+				var k = this.Compiler.LoadKernel(kName);
+				if (k == null)
+				{
+					CudaLog.Warn($"Optional kernel '{kName}' not found/failed to load. Skipping.", kernelName);
+					return false;
+				}
+
+				var stream = this.Register.GetStream();
+				if (stream == null)
+				{
+					CudaLog.Warn($"Failed to get CUDA stream for '{kName}'. Skipping.", kernelName);
+					return false;
+				}
+
+				int total = m.DevicePointers.Length;
+				for (int i = 0; i < total; i++)
+				{
+					ct.ThrowIfCancellationRequested();
+
+					var inPtr = m.DevicePointers[i];
+
+					// kernel args: (float* data, int n)
+					// Provide scalar "n" by name.
+					var argStrings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					{
+						["n"] = m.Lengths[i].ToInt64().ToString(System.Globalization.CultureInfo.InvariantCulture),
+					};
+
+					object[] mergedArgs = this.Launcher.MergeGenericKernelArgumentsDynamic(
+						kName,
+						inputBuffer: inPtr,
+						outputBuffer: null,
+						backfeedBuffer: null,
+						arguments: argStrings);
+
+					if (mergedArgs.Length == 0)
+					{
+						continue;
+					}
+
+					Configure1D(k, m.Lengths[i].ToInt64());
+					k.RunAsync(stream.Stream, mergedArgs);
+
+					if (localProgress != null)
+					{
+						double pLinear = (i + 1) / (double) total;
+						localProgress.Report(phaseStart + Math.Clamp(pLinear, 0.0, 1.0) * phaseSpan);
+					}
+				}
+
+				// Wait until done (sync on same thread to keep context)
+				stream.Synchronize();
+				return true;
+			}
+
+			// 1) Chunking + Push
+			CudaMem? mem = null;
+			var sw = Stopwatch.StartNew();
+			long originalSamplesCount = audio.LengthSamples;
+
+			if (chunkSize <= 0)
+			{
+				mem = await this.Register.PushDataAsync(audio.Data).ConfigureAwait(false);
+				if (!workingCopy)
+				{
+					audio.Data = [];
+				}
+			}
+			else
+			{
+				var chunks = await audio.GetChunksAsync(chunkSize, overlap, 0, workingCopy).ConfigureAwait(false);
+				mem = await this.Register.PushChunksAsync(chunks).ConfigureAwait(false);
+			}
+
+			if (mem == null)
+			{
+				CudaLog.Error("Failed to allocate memory for audio data.", kernelName);
+				return null;
+			}
+
+			audio["__cudaPush_ms"] = sw.Elapsed.TotalMilliseconds;
+			CudaLog.Info("Pushed audio data to GPU. (" + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms)", kernelName);
+			sw.Stop();
+
+			// 2) Optionally CuFFT (+ Windowing before FFT)
+			bool didFft = false;
+			if (this.GetKernelNeedFourierTransform(kernelName))
+			{
+				// Phase 1: 0..0.33
+				// split Phase 1:
+				// - pre-window: 0..0.08
+				// - FFT:        0.08..0.33
+				IProgress<double>? phase1Progress = progress != null
+					? new Progress<double>(p => progress.Report(Math.Clamp(p, 0.0, 0.33)))
+					: null;
+
+				// Pre-window only makes sense in time-domain float before FFT (and only for chunked or any overlap usage).
+				// If single buffer (no chunking), it still helps (Hann on full signal), but you probably want it for chunking.
+				if (mem.ElementType == typeof(float))
+				{
+					await RunFloatInplacePerChunkKernelAsync(
+						kName: "window_sqrthann_01",
+						m: mem,
+						localProgress: phase1Progress,
+						phaseStart: 0.0,
+						phaseSpan: 0.08).ConfigureAwait(false);
+				}
+
+				// FFT progress mapped into 0.08..0.33
+				IProgress<double>? fftProgress = progress != null
+					? new Progress<double>(p => progress.Report(0.08 + Math.Clamp(p, 0.0, 1.0) * (0.33 - 0.08)))
+					: null;
+
+				sw.Restart();
+				var fftPtr = await this.Fourier.PerformFftManyAsync(mem.IndexPointer, false, fftProgress).ConfigureAwait(false);
+				mem = this.Register[fftPtr];
+
+				if (mem == null)
+				{
+					CudaLog.Error("Failed to perform FFT on audio data.", kernelName);
+					return null;
+				}
+
+				sw.Stop();
+				audio["__cudaFft_ms"] = sw.Elapsed.TotalMilliseconds;
+				CudaLog.Info("Performed FFT on audio data. (" + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms)", kernelName);
+				didFft = true;
+			}
+
+			// 2.1) Verify mem Type is suitable for kernel's first pointer arg
+			var ptrArgs = argDefs
+				.Select(kv => (Name: kv.Key, Type: kv.Value))
+				.Where(t => t.Type.IsPointer)
+				.ToList();
+
+			if (ptrArgs.Count == 0)
+			{
+				CudaLog.Error("Kernel has no pointer arguments; cannot bind audio data.", kernelName);
+				return null;
+			}
+
+			// input element type must match mem.ElementType
+			var inElemType = ptrArgs[0].Type.GetElementType();
+			if (inElemType != mem.ElementType)
+			{
+				CudaLog.Error($"Kernel input pointer type mismatch: {inElemType?.FullName} /=/ {mem.ElementType?.FullName}", kernelName);
+				return null;
+			}
+
+			// Heuristik Backfeed:
+			// - 3 Pointer => definitiv Backfeed
+			// - 2 Pointer => Backfeed wenn 2. Pointer-Name nach prev/phase/state/feed/back aussieht
+			bool backfeedRequested =
+				ptrArgs.Count >= 3 ||
+				(ptrArgs.Count == 2 && IsBackfeedName(ptrArgs[1].Name));
+
+			// output needed?
+			// - 3 Pointer: input + output + backfeed
+			// - 2 Pointer: wenn backfeed => in-place+backfeed, sonst in/out
+			bool outputNeeded =
+				(ptrArgs.Count >= 3) ||
+				(ptrArgs.Count == 2 && !backfeedRequested);
+
+			// 3) Allocate output buffer (only if we truly need it)
+			CudaMem? outMem = null;
+			if (outputNeeded)
+			{
+				var outElemType = ptrArgs.Count >= 2 ? ptrArgs[1].Type.GetElementType() : null;
+				if (outElemType == null)
+				{
+					CudaLog.Error("Kernel output pointer arg could not be resolved.", kernelName);
+					return null;
+				}
+
+				sw.Restart();
+
+				if (mem.Count <= 1)
+				{
+					var method = typeof(CudaRegister).GetMethod("AllocateSingleAsync")?.MakeGenericMethod(outElemType);
+					var task = (Task<CudaMem?>?) method?.Invoke(this.Register, [(IntPtr) mem.IndexLength]);
+					outMem = task != null ? await task.ConfigureAwait(false) : null;
+				}
+				else
+				{
+					var method = typeof(CudaRegister).GetMethod("AllocateGroupAsync")?.MakeGenericMethod(outElemType);
+					var task = (Task<CudaMem?>?) method?.Invoke(this.Register, [mem.Lengths]);
+					outMem = task != null ? await task.ConfigureAwait(false) : null;
+				}
+
+				if (outMem == null)
+				{
+					CudaLog.Error("Failed to allocate output buffer for audio kernel.", kernelName);
+					return null;
+				}
+
+				sw.Stop();
+				audio["__cudaAllocOut_ms"] = sw.Elapsed.TotalMilliseconds;
+				CudaLog.Info("Allocated output buffer for audio kernel. (" + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms)", kernelName);
+			}
+
+			// 3.1) Allocate / initialize backfeed buffer (state) if requested
+			CudaMem? backMem = null;
+			if (backfeedRequested)
+			{
+				int backPtrIndex = (ptrArgs.Count >= 3) ? 2 : 1;
+				var backElemType = ptrArgs[backPtrIndex].Type.GetElementType();
+				if (backElemType == null)
+				{
+					CudaLog.Error("Backfeed pointer arg element type could not be resolved.", kernelName);
+					return null;
+				}
+
+				if (backElemType != typeof(ManagedCuda.VectorTypes.float2))
+				{
+					CudaLog.Warn($"Backfeed requested, but backfeed element type is {backElemType.FullName}. Auto-init uses zeros only.", kernelName);
+				}
+
+				long stateLen = mem.Count > 0 ? mem.Lengths[0].ToInt64() : mem.IndexLength.ToInt64();
+				if (stateLen <= 0)
+				{
+					stateLen = chunkSize > 0 ? chunkSize : 0;
+				}
+				if (stateLen <= 0)
+				{
+					CudaLog.Error("Cannot determine backfeed/state length.", kernelName);
+					return null;
+				}
+
+				if (backElemType == typeof(ManagedCuda.VectorTypes.float2))
+				{
+					var zeros = new ManagedCuda.VectorTypes.float2[stateLen];
+					backMem = await this.Register.PushDataAsync(zeros).ConfigureAwait(false);
+				}
+				else if (backElemType == typeof(float))
+				{
+					var zeros = new float[stateLen];
+					backMem = await this.Register.PushDataAsync(zeros).ConfigureAwait(false);
+				}
+				else
+				{
+					var zeros = new byte[stateLen];
+					backMem = await this.Register.PushDataAsync(zeros).ConfigureAwait(false);
+				}
+
+				if (backMem == null)
+				{
+					CudaLog.Error("Failed to allocate/init backfeed buffer.", kernelName);
+					return null;
+				}
+			}
+
+			// 4.0) Load kernel
+			var kernel = this.Compiler.LoadKernel(kernelName);
+			if (kernel == null)
+			{
+				CudaLog.Error("Failed to load kernel for audio processing.", kernelName);
+				return null;
+			}
+
+			// 4) Launch kernel on each chunk
+			sw.Restart();
+
+			Func<double, double> mapKernelProgress = didFft
+				? p => 0.33 + Math.Clamp(p, 0.0, 1.0) * 0.33
+				: p => Math.Clamp(p, 0.0, 1.0);
+
+			Dictionary<string, string>? argStrings = arguments != null ? ToStringArgDict(arguments) : null;
+
+			int totalChunks = mem.DevicePointers.Length;
+			int completed = 0;
+
+			// If backfeed/state is used, FORCE sequential execution (state depends on previous chunk).
+			bool forceSequential = backfeedRequested;
+
+			// streams
+			var streamList = await this.Register.GetManyStreamsAsync(maxCount: 0).ConfigureAwait(false);
+			var streams = streamList?.ToArray();
+
+			// choose a stream for sequential/stateful mode
+			var seqStream = this.Register.GetStream();
+			if (seqStream == null)
+			{
+				CudaLog.Error("Failed to get CUDA stream for kernel execution.", kernelName);
+				return null;
+			}
+
+			if (forceSequential || streams == null || streams.Length == 0)
+			{
+				for (int i = 0; i < totalChunks; i++)
+				{
+					ct.ThrowIfCancellationRequested();
+
+					CUdeviceptr inPtr = mem.DevicePointers[i];
+					CUdeviceptr? outPtr = outMem != null && outMem.DevicePointers.Length > i ? outMem.DevicePointers[i] : null;
+					CUdeviceptr? backPtr = backMem != null ? backMem.DevicePointers[0] : null; // ONE shared state
+
+					object[] mergedArgs = this.Launcher.MergeGenericKernelArgumentsDynamic(
+						kernelName,
+						inputBuffer: inPtr,
+						outputBuffer: outPtr,
+						backfeedBuffer: backPtr,
+						arguments: argStrings);
+
+					if (mergedArgs.Length == 0)
+					{
+						continue;
+					}
+
+					Configure1D(kernel, mem.Lengths[i].ToInt64());
+					kernel.RunAsync(seqStream.Stream, mergedArgs);
+
+					if (progress != null)
+					{
+						double pLinear = (i + 1) / (double) totalChunks;
+						progress.Report(mapKernelProgress(pLinear));
+					}
+				}
+
+				seqStream.Synchronize();
+			}
+			else
+			{
+				// Parallel only if not stateful
+				int S = streams.Length;
+				var tasks = new List<Task>(S);
+
+				for (int s = 0; s < S; s++)
+				{
+					int streamIndex = s;
+					tasks.Add(Task.Run(async () =>
+					{
+						this.Context.SetCurrent();
+
+						var stream = streams[streamIndex];
+
+						for (int i = streamIndex; i < totalChunks; i += S)
+						{
+							ct.ThrowIfCancellationRequested();
+
+							CUdeviceptr inPtr = mem.DevicePointers[i];
+							CUdeviceptr? outPtr = outMem != null && outMem.DevicePointers.Length > i ? outMem.DevicePointers[i] : null;
+
+							object[] mergedArgs = this.Launcher.MergeGenericKernelArgumentsDynamic(
+								kernelName,
+								inputBuffer: inPtr,
+								outputBuffer: outPtr,
+								backfeedBuffer: null,
+								arguments: argStrings);
+
+							if (mergedArgs.Length == 0)
+							{
+								continue;
+							}
+
+							Configure1D(kernel, mem.Lengths[i].ToInt64());
+							kernel.RunAsync(stream.Stream, mergedArgs);
+
+							await Task.Yield();
+
+							int done = Interlocked.Increment(ref completed);
+							if (progress != null)
+							{
+								double pLinear = done / (double) totalChunks;
+								progress.Report(mapKernelProgress(pLinear));
+							}
+						}
+
+						// wait this stream
+						stream.Synchronize();
+					}, ct));
+				}
+
+				await Task.WhenAll(tasks).ConfigureAwait(false);
+			}
+
+			sw.Stop();
+			audio["__cudaKernel_ms"] = sw.Elapsed.TotalMilliseconds;
+			CudaLog.Info("Executed audio kernel on GPU. (" + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms)", kernelName);
+
+			// Switch mem to output if out-of-place
+			if (outMem != null)
+			{
+				try
+				{
+					long freed = this.Register.FreeMemory(mem);
+					CudaLog.Info("Freed old input buffer after kernel execution. (" + freed.ToString("N0") + " bytes)", kernelName);
+					mem = outMem;
+				}
+				catch (Exception ex)
+				{
+					CudaLog.Warn("Failed to dispose old input buffer after kernel execution.", ex.Message);
+				}
+			}
+
+			// 5) Optionally Inverse CuFFT (+ post-scale + post-window)
+			if (didFft && mem.ElementType == typeof(ManagedCuda.VectorTypes.float2))
+			{
+				// Phase 3: 0.66..1.0
+				// split Phase 3:
+				// - IFFT:       0.66..0.94
+				// - scale:      0.94..0.97
+				// - post-window 0.97..1.00
+				IProgress<double>? ifftProgress = progress != null
+					? new Progress<double>(p => progress.Report(0.66 + Math.Clamp(p, 0.0, 1.0) * (0.94 - 0.66)))
+					: null;
+
+				sw.Restart();
+				var ifftPtr = await this.Fourier.PerformIfftManyAsync(mem.IndexPointer, false, ifftProgress).ConfigureAwait(false);
+				mem = this.Register[ifftPtr];
+				if (mem == null)
+				{
+					CudaLog.Error("Failed to perform inverse FFT on audio data.", kernelName);
+					return null;
+				}
+
+				sw.Stop();
+				audio["__cudaIfft_ms"] = sw.Elapsed.TotalMilliseconds;
+				CudaLog.Info("Performed I-FFT on audio data. (" + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms)", kernelName);
+
+				// After IFFT we should be back in float time-domain:
+				// Apply CUFFT scaling (1/N) and synthesis window (sqrt-hann)
+				IProgress<double>? phase3Progress = progress != null
+					? new Progress<double>(p => progress.Report(Math.Clamp(p, 0.66, 1.0)))
+					: null;
+
+				// scale
+				await RunFloatInplacePerChunkKernelAsync(
+					kName: "ifft_scale_01",
+					m: mem,
+					localProgress: phase3Progress,
+					phaseStart: 0.94,
+					phaseSpan: 0.03).ConfigureAwait(false);
+
+				// post-window
+				await RunFloatInplacePerChunkKernelAsync(
+					kName: "window_sqrthann_01",
+					m: mem,
+					localProgress: phase3Progress,
+					phaseStart: 0.97,
+					phaseSpan: 0.03).ConfigureAwait(false);
+			}
+
+			// 5.1) Verify mem Type is float for audio output
+			if (mem.ElementType != typeof(float))
+			{
+				CudaLog.Error("Audio output data is not of type float! Cannot pull back to AudioObj.", kernelName);
+				return null;
+			}
+
+			// 6) Pull
+			sw.Restart();
+			if (mem.Count <= 1)
+			{
+				var data = await this.Register.PullDataAsync<float>(mem.IndexPointer).ConfigureAwait(false);
+				audio.Data = data;
+			}
+			else
+			{
+				var chunks = await this.Register.PullChunksAsync<float>(mem.IndexPointer).ConfigureAwait(false);
+				if (stretchFactor.HasValue)
+				{
+					audio.StretchFactor = stretchFactor.Value;
+					audio.BeatsPerMinute = audio.BeatsPerMinute / stretchFactor.Value;
+				}
+
+				await audio.AggregateStretchedChunksAsync(chunks).ConfigureAwait(false);
+			}
+			sw.Stop();
+
+			audio["__cudaPull_ms"] = sw.Elapsed.TotalMilliseconds;
+			CudaLog.Info("Pulled audio data from GPU. (" + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms)", kernelName);
+
+			// 7) Normalize (optional)
+			if (didFft)
+			{
+				await audio.NormalizeAsync(1.0f).ConfigureAwait(false);
+			}
+
+			// cleanup backfeed mem if we allocated it
+			if (backMem != null)
+			{
+				try { this.Register.FreeMemory(backMem); } catch { /* ignore */ }
+			}
+
+			progress?.Report(1.0);
+			return audio;
+
+			static bool IsBackfeedName(string name)
+			{
+				if (string.IsNullOrWhiteSpace(name))
+				{
+					return false;
+				}
+
+				name = name.Trim();
+				return name.Contains("prev", StringComparison.OrdinalIgnoreCase)
+					|| name.Contains("phase", StringComparison.OrdinalIgnoreCase)
+					|| name.Contains("state", StringComparison.OrdinalIgnoreCase)
+					|| name.Contains("feed", StringComparison.OrdinalIgnoreCase)
+					|| name.Contains("back", StringComparison.OrdinalIgnoreCase);
+			}
+		}
+
+
+		private static void Configure1D(CudaKernel kernel, long elementCount)
+		{
+			if (kernel == null)
+			{
+				throw new ArgumentNullException(nameof(kernel));
+			}
+
+			const int block = 256;
+			long grid = (elementCount + block - 1) / block;
+			if (grid <= 0)
+			{
+				grid = 1;
+			}
+
+			kernel.BlockDimensions = new dim3(block, 1, 1);
+			kernel.GridDimensions = new dim3((uint) Math.Min(grid, int.MaxValue), 1, 1);
+		}
+
+
+		public async Task ExecuteAudioKernelInPlaceAsync(
             AudioObj audio,
             string kernelName,
             int chunkSize,
@@ -1432,7 +2165,7 @@ namespace LPAP.Cuda
             return dst;
         }
 
-        private static void Configure1D(CudaKernel kernel, long elementCount)
+        private static void Configure1DOld(CudaKernel kernel, long elementCount)
         {
             // basic sane defaults; your launcher has a smarter version internally, but it’s private :contentReference[oaicite:4]{index=4}
             int block = 256;
