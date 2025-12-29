@@ -54,8 +54,17 @@
 			this.label_fftRequired = new Label();
 			this.textBox_meta = new TextBox();
 			this.label_cudaWatts = new Label();
+			this.numericUpDown_chunkSize = new NumericUpDown();
+			this.label_info_chunkSize = new Label();
+			this.label_info_overlap = new Label();
+			this.numericUpDown_overlap = new NumericUpDown();
+			this.progressBar_cudaKernel = new ProgressBar();
+			this.button_cufft = new Button();
+			this.label_kernelProgress = new Label();
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).BeginInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).BeginInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).BeginInit();
 			this.SuspendLayout();
 			// 
 			// button_import
@@ -313,11 +322,85 @@
 			this.label_cudaWatts.TabIndex = 25;
 			this.label_cudaWatts.Text = "Power: -W";
 			// 
+			// numericUpDown_chunkSize
+			// 
+			this.numericUpDown_chunkSize.Location = new Point(328, 192);
+			this.numericUpDown_chunkSize.Maximum = new decimal(new int[] { 65536, 0, 0, 0 });
+			this.numericUpDown_chunkSize.Name = "numericUpDown_chunkSize";
+			this.numericUpDown_chunkSize.Size = new Size(80, 23);
+			this.numericUpDown_chunkSize.TabIndex = 26;
+			this.numericUpDown_chunkSize.Value = new decimal(new int[] { 2048, 0, 0, 0 });
+			this.numericUpDown_chunkSize.ValueChanged += this.numericUpDown_chunkSize_ValueChanged;
+			// 
+			// label_info_chunkSize
+			// 
+			this.label_info_chunkSize.AutoSize = true;
+			this.label_info_chunkSize.Location = new Point(328, 174);
+			this.label_info_chunkSize.Name = "label_info_chunkSize";
+			this.label_info_chunkSize.Size = new Size(65, 15);
+			this.label_info_chunkSize.TabIndex = 27;
+			this.label_info_chunkSize.Text = "Chunk Size";
+			// 
+			// label_info_overlap
+			// 
+			this.label_info_overlap.AutoSize = true;
+			this.label_info_overlap.Location = new Point(328, 218);
+			this.label_info_overlap.Name = "label_info_overlap";
+			this.label_info_overlap.Size = new Size(48, 15);
+			this.label_info_overlap.TabIndex = 29;
+			this.label_info_overlap.Text = "Overlap";
+			// 
+			// numericUpDown_overlap
+			// 
+			this.numericUpDown_overlap.DecimalPlaces = 3;
+			this.numericUpDown_overlap.Increment = new decimal(new int[] { 5, 0, 0, 196608 });
+			this.numericUpDown_overlap.Location = new Point(328, 236);
+			this.numericUpDown_overlap.Maximum = new decimal(new int[] { 999, 0, 0, 196608 });
+			this.numericUpDown_overlap.Name = "numericUpDown_overlap";
+			this.numericUpDown_overlap.Size = new Size(80, 23);
+			this.numericUpDown_overlap.TabIndex = 28;
+			this.numericUpDown_overlap.Value = new decimal(new int[] { 5, 0, 0, 65536 });
+			this.numericUpDown_overlap.ValueChanged += this.numericUpDown_overlap_ValueChanged;
+			// 
+			// progressBar_cudaKernel
+			// 
+			this.progressBar_cudaKernel.Location = new Point(328, 265);
+			this.progressBar_cudaKernel.Maximum = 1000;
+			this.progressBar_cudaKernel.Name = "progressBar_cudaKernel";
+			this.progressBar_cudaKernel.Size = new Size(152, 14);
+			this.progressBar_cudaKernel.TabIndex = 30;
+			// 
+			// button_cufft
+			// 
+			this.button_cufft.Location = new Point(166, 377);
+			this.button_cufft.Name = "button_cufft";
+			this.button_cufft.Size = new Size(75, 23);
+			this.button_cufft.TabIndex = 31;
+			this.button_cufft.Text = "CuFFT";
+			this.button_cufft.UseVisualStyleBackColor = true;
+			this.button_cufft.Click += this.button_cufft_Click;
+			// 
+			// label_kernelProgress
+			// 
+			this.label_kernelProgress.AutoSize = true;
+			this.label_kernelProgress.Location = new Point(423, 247);
+			this.label_kernelProgress.Name = "label_kernelProgress";
+			this.label_kernelProgress.Size = new Size(29, 15);
+			this.label_kernelProgress.TabIndex = 32;
+			this.label_kernelProgress.Text = "- / 0";
+			// 
 			// WindowMain
 			// 
 			this.AutoScaleDimensions = new SizeF(7F, 15F);
 			this.AutoScaleMode = AutoScaleMode.Font;
 			this.ClientSize = new Size(604, 441);
+			this.Controls.Add(this.label_kernelProgress);
+			this.Controls.Add(this.button_cufft);
+			this.Controls.Add(this.progressBar_cudaKernel);
+			this.Controls.Add(this.label_info_overlap);
+			this.Controls.Add(this.numericUpDown_overlap);
+			this.Controls.Add(this.label_info_chunkSize);
+			this.Controls.Add(this.numericUpDown_chunkSize);
 			this.Controls.Add(this.label_cudaWatts);
 			this.Controls.Add(this.textBox_meta);
 			this.Controls.Add(this.label_fftRequired);
@@ -351,6 +434,8 @@
 			this.Text = "LPAP (Forms) Main-Control";
 			((System.ComponentModel.ISupportInitialize) this.pictureBox_cores).EndInit();
 			((System.ComponentModel.ISupportInitialize) this.numericUpDown_statisticsUpdateDelay).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_chunkSize).EndInit();
+			((System.ComponentModel.ISupportInitialize) this.numericUpDown_overlap).EndInit();
 			this.ResumeLayout(false);
 			this.PerformLayout();
 		}
@@ -383,5 +468,12 @@
 		private Label label_fftRequired;
 		private TextBox textBox_meta;
 		private Label label_cudaWatts;
+		private NumericUpDown numericUpDown_chunkSize;
+		private Label label_info_chunkSize;
+		private Label label_info_overlap;
+		private NumericUpDown numericUpDown_overlap;
+		private ProgressBar progressBar_cudaKernel;
+		private Button button_cufft;
+		private Label label_kernelProgress;
 	}
 }

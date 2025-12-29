@@ -59,8 +59,10 @@ namespace LPAP.Audio
         public override string ToString()
         {
             var sb = new StringBuilder();
-            sb.Append($"Algorithm: {this.Algorithm}" + Environment.NewLine + "StretchFactor: {this.StretchFactor:F9}");
+            sb.Append($"Algorithm: {this.Algorithm}" + Environment.NewLine + $"StretchFactor: {this.StretchFactor:F9}");
+            sb.Append(Environment.NewLine);
             sb.Append($", Workers: {this.Workers}, Time: {this.ElapsedSeconds:F3}");
+            sb.Append(Environment.NewLine);
             foreach (var kvp in this.AdditionalParams)
             {
                 sb.Append($"{kvp.Key}: {kvp.Value}");

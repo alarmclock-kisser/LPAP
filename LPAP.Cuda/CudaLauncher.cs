@@ -168,7 +168,7 @@ namespace LPAP.Cuda
                 return [];
             }
 
-            object[] mergedArgs = this.MergeGenericKernelArgumentsDynamic(kernelCodeOrName, inputMem?.DevicePointers.FirstOrDefault(), outputMem.DevicePointers.FirstOrDefault(), arguments);
+            object[] mergedArgs = this.MergeGenericKernelArgumentsDynamic(kernelCodeOrName, inputMem?.DevicePointers.FirstOrDefault(), outputMem.DevicePointers.FirstOrDefault(), null, arguments);
             if (mergedArgs.Length == 0)
             {
                 return [];
@@ -256,7 +256,7 @@ namespace LPAP.Cuda
                 }
             }
 
-            var sortedArgs = this.MergeGenericKernelArgumentsDynamic("visualizer" + visualizerVersion, magMem.DevicePointers[0], pixelMem.DevicePointers[0], visArgs);
+            var sortedArgs = this.MergeGenericKernelArgumentsDynamic("visualizer" + visualizerVersion, magMem.DevicePointers[0], pixelMem.DevicePointers[0], null, visArgs);
             visKernel.BlockDimensions = new dim3(16, 16, 1);
             visKernel.GridDimensions = new dim3((uint) ((width + 15) / 16), (uint) ((height + 15) / 16), 1);
             visKernel.Run(sortedArgs);
@@ -349,84 +349,158 @@ namespace LPAP.Cuda
             return sorted;
         }
 
-        public object[] MergeGenericKernelArgumentsDynamic(string kernelCode, CUdeviceptr? inputBuffer = null, CUdeviceptr? outputBuffer = null, Dictionary<string, string>? arguments = null)
+		public object[] MergeGenericKernelArgumentsDynamic(
+	string kernelCode,
+	CUdeviceptr? inputBuffer = null,
+	CUdeviceptr? outputBuffer = null,
+	CUdeviceptr? backfeedBuffer = null,
+	Dictionary<string, string>? arguments = null)
+		{
+			var argDefs = this._compiler.GetArguments(kernelCode);
+			if (argDefs.Count == 0)
+			{
+				return [];
+			}
+
+			Dictionary<string, string> provided = arguments != null
+				? new Dictionary<string, string>(arguments, StringComparer.OrdinalIgnoreCase)
+				: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+			var merged = new object[argDefs.Count];
+			int pointerCount = 0;
+
+			for (int i = 0; i < argDefs.Count; i++)
+			{
+				var (name, type) = argDefs.ElementAt(i);
+
+				if (type.IsPointer)
+				{
+					// Pointer-Reihenfolge:
+					// 0 = input, 1 = output, 2 = backfeed/state
+					if (pointerCount == 0 && inputBuffer.HasValue)
+					{
+						merged[i] = inputBuffer.Value;
+					}
+					else if (pointerCount == 1 && outputBuffer.HasValue)
+					{
+						merged[i] = outputBuffer.Value;
+					}
+					else if (pointerCount == 2 && backfeedBuffer.HasValue)
+					{
+						merged[i] = backfeedBuffer.Value;
+					}
+					else
+					{
+						// user-supplied ptr by arg name
+						if (provided.TryGetValue(name, out var rawPtr) && TryParseDevicePtr(rawPtr, out var fromArgs))
+						{
+							merged[i] = fromArgs;
+						}
+						else
+						{
+							merged[i] = new CUdeviceptr(); // null ptr fallback
+						}
+					}
+
+					pointerCount++;
+					continue;
+				}
+
+				// scalar args
+				if (provided.TryGetValue(name, out var raw))
+				{
+					merged[i] = ParseScalar(type, raw);
+				}
+				else
+				{
+					merged[i] = type.IsValueType ? Activator.CreateInstance(type)! : 0;
+				}
+			}
+
+			return merged;
+		}
+
+		private static bool TryParseDevicePtr(string raw, out CUdeviceptr ptr)
         {
-            var argDefs = this._compiler.GetArguments(kernelCode);
-            if (argDefs.Count == 0)
+            ptr = new CUdeviceptr();
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                return [];
+                return false;
             }
 
-            Dictionary<string, string> provided = arguments != null
-                ? new Dictionary<string, string>(arguments, StringComparer.OrdinalIgnoreCase)
-                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-            var merged = new object[argDefs.Count];
-            int pointerCount = 0;
-            for (int i = 0; i < argDefs.Count; i++)
+            // Unterstütze dezimal und hex (0x...)
+            if (ulong.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var u))
             {
-                var (name, type) = argDefs.ElementAt(i);
-                if (type.IsPointer)
-                {
-                    merged[i] = pointerCount switch
-                    {
-                        0 when inputBuffer.HasValue => inputBuffer.Value,
-                        1 when outputBuffer.HasValue => outputBuffer.Value,
-                        _ => new CUdeviceptr()
-                    };
-                    pointerCount++;
-                    continue;
-                }
+                ptr = new CUdeviceptr(new IntPtr(unchecked((long)u)));
+                return true;
+            }
 
-                if (provided.TryGetValue(name, out var raw))
+            // Hex mit 0x Präfix
+            if (raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ulong.TryParse(raw.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var uh))
                 {
-                    merged[i] = ParseScalar(type, raw);
-                }
-                else
-                {
-                    merged[i] = type.IsValueType ? Activator.CreateInstance(type)! : 0;
+                    ptr = new CUdeviceptr(new IntPtr(unchecked((long)uh)));
+                    return true;
                 }
             }
 
-            return merged;
+            // IntPtr als String
+            if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l))
+            {
+                ptr = new CUdeviceptr(new IntPtr(l));
+                return true;
+            }
+
+            return false;
         }
 
         private static object ParseScalar(Type type, string raw)
         {
-            if (type == typeof(int) && int.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var i))
-            {
-                return i;
-            }
-            if (type == typeof(float) && float.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var f))
-            {
-                return f;
-            }
-            if (type == typeof(double) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
-            {
-                return d;
-            }
-            if (type == typeof(long) && long.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var l))
-            {
-                return l;
-            }
-            if (type == typeof(uint) && uint.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var u))
-            {
-                return u;
-            }
-            if (type == typeof(bool))
+            var t = Nullable.GetUnderlyingType(type) ?? type;
+
+            if (t == typeof(int) && int.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var i))
+			{
+				return i;
+			}
+
+			if (t == typeof(long) && long.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var l))
+			{
+				return l;
+			}
+
+			if (t == typeof(uint) && uint.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var u))
+			{
+				return u;
+			}
+
+			if (t == typeof(float) && float.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var f))
+			{
+				return f;
+			}
+
+			if (t == typeof(double) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+			{
+				return d;
+			}
+
+			if (t == typeof(bool))
             {
                 if (raw == "0")
-                {
-                    return false;
-                }
-                if (raw == "1")
-                {
-                    return true;
-                }
-                return bool.TryParse(raw, out var b) && b;
+				{
+					return false;
+				}
+
+				if (raw == "1")
+				{
+					return true;
+				}
+
+				return bool.TryParse(raw, out var b) && b;
             }
 
-            return 0;
+            // Fallback
+            try { return Convert.ChangeType(raw, t, CultureInfo.InvariantCulture); } catch { return Activator.CreateInstance(t)!; }
         }
 
         private static bool IsMerged2DVariant(string kernelName)

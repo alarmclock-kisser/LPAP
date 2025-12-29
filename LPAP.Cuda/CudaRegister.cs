@@ -729,7 +729,7 @@ namespace LPAP.Cuda
                         {
                             var result = ManagedCuda.DriverAPINativeMethods.AsynchronousMemcpy_v2.cuMemcpyAsync(
                                 new CUdeviceptr((IntPtr) ptr),
-                                new CUdeviceptr(indexPointer),
+                                mem.DevicePointers[i],
                                 (SizeT) byteSize,
                                 stream.Stream);
                             if (result != CUResult.Success)

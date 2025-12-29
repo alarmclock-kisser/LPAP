@@ -20,6 +20,7 @@
     <ProjectReference Include="..\LPAP.Onnx\LPAP.Onnx.csproj" />
     <ProjectReference Include="..\LPAP.OpenVino\LPAP.OpenVino.csproj" />
     <ProjectReference Include="..\LPAP.OpenVino\LPAP.OpenVino.csproj" />
+    <ProjectReference Include="..\LPAP.Torch\LPAP.Torch.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 ﻿using LPAP.Audio;
 using LPAP.Cuda;
+using LPAP.Forms.Views;
 using ManagedCuda.VectorTypes;
 using System;
 using System.Collections.Generic;
@@ -22,18 +23,128 @@ namespace LPAP.Forms
         {
             get
             {
-                if (this.KernelArgumentControls == null)
+                if (this.KernelArgumentControls == null || this.KernelArgumentControls.Count == 0)
                 {
                     return null;
                 }
 
-                return this.KernelArgumentControls.Select(kvp => new KeyValuePair<string, object>(kvp.Key, kvp.Value)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                var defs = this.KernelArgumentDefinitions ?? new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+                var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var (name, ctrl) in this.KernelArgumentControls)
+                {
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
+
+                    if (!defs.TryGetValue(name, out var targetType) || targetType == null)
+                    {
+                        // Fallback to string
+                        targetType = typeof(string);
+                    }
+
+                    // Skip device pointer args (are set internally by launcher)
+                    if (targetType.IsPointer)
+                    {
+                        continue;
+                    }
+
+                    object? value = ExtractKernelArgControlValue(ctrl, targetType);
+                    if (value != null)
+                    {
+                        result[name] = value;
+                    }
+                }
+
+                return result;
             }
+        }
+        internal double? StretchFactor => this.KernelArgumentDefinitions != null && this.KernelArgumentDefinitions.Keys.Any(k => k.Contains("fac", StringComparison.OrdinalIgnoreCase))
+            ? this.KernelArgumentValues != null && this.KernelArgumentValues.Keys.Any(k => k.Contains("fac", StringComparison.OrdinalIgnoreCase))
+                ? Convert.ToDouble(this.KernelArgumentValues.First(kv => kv.Key.Contains("fac", StringComparison.OrdinalIgnoreCase)).Value, System.Globalization.CultureInfo.InvariantCulture)
+                : null : null;
+
+		private static object? ExtractKernelArgControlValue(Control ctrl, Type targetType)
+        {
+            var effectiveType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+            if (ctrl is NumericUpDown nud)
+            {
+                decimal d = nud.Value;
+
+                if (effectiveType == typeof(int))
+				{
+					return (int)d;
+				}
+
+				if (effectiveType == typeof(long))
+				{
+					return (long)d;
+				}
+
+				if (effectiveType == typeof(float))
+				{
+					return (float)d;
+				}
+
+				if (effectiveType == typeof(double))
+				{
+					return (double)d;
+				}
+
+				if (effectiveType == typeof(decimal))
+				{
+					return d;
+				}
+
+				try { return Convert.ChangeType(d, effectiveType, System.Globalization.CultureInfo.InvariantCulture); } catch { return null; }
+            }
+
+            if (ctrl is CheckBox cb)
+            {
+                if (effectiveType == typeof(bool))
+				{
+					return cb.Checked;
+				}
+
+				return cb.Checked ? 1 : 0;
+            }
+
+            if (ctrl is TextBox tb)
+            {
+                if (effectiveType == typeof(string))
+				{
+					return tb.Text;
+				}
+
+				if (string.IsNullOrWhiteSpace(tb.Text) && Nullable.GetUnderlyingType(targetType) != null)
+				{
+					return null;
+				}
+
+				try { return Convert.ChangeType(tb.Text, effectiveType, System.Globalization.CultureInfo.InvariantCulture); } catch { return tb.Text; }
+            }
+
+            if (ctrl is ComboBox combo)
+            {
+                string? s = combo.SelectedItem?.ToString();
+                if (effectiveType.IsEnum && !string.IsNullOrWhiteSpace(s))
+                {
+                    try { return Enum.Parse(effectiveType, s, ignoreCase: true); } catch { }
+                }
+                return s ?? string.Empty;
+            }
+
+            return null;
         }
 
         public Boolean FftRequired { get; private set; }
+        internal int ChunkSize => (int) this.numericUpDown_chunkSize.Value;
+        internal float Overlap => (float) this.numericUpDown_overlap.Value;
 
-        private void ListBox_Bind_CudaLog()
+
+		private void ListBox_Bind_CudaLog()
         {
             this.listBox_cudaLog.SuspendLayout();
             this.listBox_cudaLog.Items.Clear();
@@ -251,7 +362,65 @@ namespace LPAP.Forms
                             nud.Value = defVal;
                         }
                         catch { /* ignore */ }
-                        input = nud;
+                        if ((argName.Contains("size", StringComparison.OrdinalIgnoreCase) &! argName.Contains("overlap", StringComparison.OrdinalIgnoreCase)) || argName.Contains("length", StringComparison.OrdinalIgnoreCase))
+                        {
+                            nud.Value = this.ChunkSize;
+							nud.ValueChanged += (s, e) =>
+                            {
+                                int sizeVal = 0;
+                                if (argType == typeof(int))
+                                {
+                                    sizeVal = (int)nud.Value;
+                                }
+                                else if (argType == typeof(long))
+                                {
+                                    sizeVal = (int)(long)nud.Value;
+                                }
+                                this.numericUpDown_chunkSize.Value = Math.Clamp(sizeVal, this.numericUpDown_chunkSize.Minimum, this.numericUpDown_chunkSize.Maximum);
+							};
+						}
+                        else if (argName.Contains("overlap", StringComparison.OrdinalIgnoreCase))
+                        {
+                            nud.Value = (decimal) this.Overlap;
+							if (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal))
+                            {
+                                nud.ValueChanged += (s, e) =>
+                                {
+                                    float overlapVal = 0f;
+                                    if (argType == typeof(float))
+                                    {
+                                        overlapVal = (float)nud.Value;
+                                    }
+                                    else if (argType == typeof(double))
+                                    {
+                                        overlapVal = (float)(double)nud.Value;
+                                    }
+                                    else if (argType == typeof(decimal))
+                                    {
+                                        overlapVal = (float)(decimal)nud.Value;
+                                    }
+                                    this.numericUpDown_overlap.Value = Math.Clamp((decimal)overlapVal, this.numericUpDown_overlap.Minimum, this.numericUpDown_overlap.Maximum);
+								};
+							}
+                            else if (argType == typeof(int) || argType == typeof(long))
+                            {
+                                nud.ValueChanged += (s, e) =>
+                                {
+                                    int overlapVal = 0;
+                                    if (argType == typeof(int))
+                                    {
+                                        overlapVal = (int)nud.Value;
+                                    }
+                                    else if (argType == typeof(long))
+                                    {
+                                        overlapVal = (int)(long)nud.Value;
+                                    }
+                                    this.numericUpDown_overlap.Value = (decimal)overlapVal / this.ChunkSize;
+                                };
+							}
+						}
+
+						input = nud;
                     }
 
                     // tag the control with (argName,argType) for later extraction
@@ -441,6 +610,12 @@ namespace LPAP.Forms
             }
 
             bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+            bool shiftFlag = (ModifierKeys & Keys.Shift) == Keys.Shift;
+            bool altFlag = (ModifierKeys & Keys.Alt) == Keys.Alt;
+            if (altFlag)
+            {
+                this.AudioC.Clear();
+            }
 
             string kernelName = this.SelectedKernelName ?? string.Empty;
             if (string.IsNullOrWhiteSpace(kernelName))
@@ -450,273 +625,176 @@ namespace LPAP.Forms
             }
 
             // --- Try get current audio (reflection fallback) ---
-            static AudioObj? TryGetAudio(object form)
-            {
-                var t = form.GetType();
-
-                // common property names
-                foreach (var pn in new[] { "Audio", "CurrentAudio", "SelectedAudio", "AudioObj", "ActiveAudio" })
-                {
-                    var p = t.GetProperty(pn, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                    if (p != null && typeof(AudioObj).IsAssignableFrom(p.PropertyType))
-                    {
-                        if (p.GetValue(form) is AudioObj ao)
-                        {
-                            return ao;
-                        }
-                    }
-                }
-
-                // common field names
-                foreach (var fn in new[] { "_audio", "audio", "Audio", "CurrentAudio", "SelectedAudio" })
-                {
-                    var f = t.GetField(fn, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                    if (f != null && typeof(AudioObj).IsAssignableFrom(f.FieldType))
-                    {
-                        if (f.GetValue(form) is AudioObj ao)
-                        {
-                            return ao;
-                        }
-                    }
-                }
-
-                return null;
-            }
-
-            var audio = TryGetAudio(this);
-            if (audio is null || audio.Data is null || audio.Data.Length == 0)
+            List<AudioObj> audios = WindowMain.SelectedAudios.ToList();
+            if (audios.Count < 1)
             {
                 MessageBox.Show("No audio loaded/selected.", "CUDA", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // --- Build argument dictionary from controls ---
-            var args = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            // Determine suitable presets count (for timestretch07 only)
+            var suitablePresets = altFlag
+                ? CudaKernelPresets.GetAllPresets().Where(p => p.IsSuitableForKernel(kernelName)).ToList()
+                : new List<CudaKernelPresets.CudaKernelPreset>(); // none if not ALT
 
-            // Fix for CS8602: check for null before dereferencing
-            if (this.KernelArgumentControls != null)
+            int totalTracks = audios.Count;
+            int presetsPerTrack = altFlag ? Math.Max(1, suitablePresets.Count) : 1;
+            int totalComb = totalTracks * presetsPerTrack;
+
+            IProgress<double> progress = ProgressAdapters.ToProgressBar(this.progressBar_cudaKernel, this.progressBar_cudaKernel.Maximum);
+            int currentComb = 0;
+            this.label_kernelProgress.Text = $"{currentComb + 1} / {presetsPerTrack} / {totalComb}";
+            this.button_cudaExecute.Enabled = false;
+
+            foreach (AudioObj audio in audios)
             {
-                foreach (var kvp in this.KernelArgumentControls)
+                if (!altFlag)
                 {
-                    var argName = kvp.Key;
-                    var control = kvp.Value;
+                    // Single run with current UI args
+                    var res = await this.Cuda.ExecuteAudioKernelAutoAsync(
+                        audio,
+                        kernelName,
+                        this.ChunkSize,
+                        this.Overlap,
+                        this.StretchFactor,
+                        this.KernelArgumentValues,
+                        (ctrlFlag || altFlag),
+                        progress);
 
-                    if (control.Tag is ValueTuple<string, Type> meta)
+                    if (ctrlFlag && res != null)
                     {
-                        var (_, argType) = meta;
+                        audio.CopyAudioObj(res);
+                    }
 
-                        // ignore pointer args in UI (CudaService auto-wires audio buffers)
-                        if (argType.IsPointer)
+                    // advance overall combo counter
+                    currentComb++;
+                    this.label_kernelProgress.Text = $"{currentComb} / {presetsPerTrack} / {totalComb}";
+                }
+                else
+                {
+                    // ALT pressed: iterate all suitable v07 presets and execute each
+                    if (suitablePresets.Count == 0)
+                    {
+                        // Fallback: run once with current args
+                        var res = await this.Cuda.ExecuteAudioKernelAutoAsync(
+                            audio,
+                            kernelName,
+                            this.ChunkSize,
+                            this.Overlap,
+                            this.StretchFactor,
+                            this.KernelArgumentValues,
+                            true,
+                            progress);
+                        if (res != null)
                         {
-                            continue;
+                            res.Name = audio.Name + " [Default]";
+                            this.AudioC.Add(res);
                         }
 
-                        object? valueObj = null;
-
-                        try
+                        this.progressBar_cudaKernel.Value = 0;
+                        currentComb++;
+                        this.label_kernelProgress.Text = $"{currentComb} / {presetsPerTrack} / {totalComb}";
+                    }
+                    else
+                    {
+                        foreach (var preset in suitablePresets)
                         {
-                            if (control is CheckBox cb)
+                            // Merge current args with preset args (preset overwrites where defined)
+                            var mergedArgs = ApplyPresetToArgs(this.KernelArgumentValues, preset);
+
+                            // Determine chunkSize/overlap from merged (if provided), else UI values
+                            int chunkSize = this.ChunkSize;
+                            float overlap = this.Overlap;
+                            if (mergedArgs.TryGetValue("chunkSize", out var csObj))
                             {
-                                valueObj = cb.Checked;
+                                try { chunkSize = Convert.ToInt32(csObj, System.Globalization.CultureInfo.InvariantCulture); } catch { }
                             }
-                            else if (control is NumericUpDown nud)
+                            if (mergedArgs.TryGetValue("overlap", out var ovObj))
                             {
-                                // cast numeric according to expected type
-                                if (argType == typeof(int))
-                                {
-                                    valueObj = (int) nud.Value;
-                                }
-                                else if (argType == typeof(long))
-                                {
-                                    valueObj = (long) nud.Value;
-                                }
-                                else if (argType == typeof(uint))
-                                {
-                                    valueObj = (uint) nud.Value;
-                                }
-                                else if (argType == typeof(ulong))
-                                {
-                                    valueObj = (ulong) nud.Value;
-                                }
-                                else if (argType == typeof(float))
-                                {
-                                    valueObj = (float) nud.Value;
-                                }
-                                else if (argType == typeof(double))
-                                {
-                                    valueObj = (double) nud.Value;
-                                }
-                                else if (argType == typeof(decimal))
-                                {
-                                    valueObj = nud.Value;
-                                }
-                                else
-                                {
-                                    // fallback: keep decimal
-                                    valueObj = nud.Value;
-                                }
+                                try { overlap = Convert.ToSingle(ovObj, System.Globalization.CultureInfo.InvariantCulture); } catch { }
                             }
-                        }
-                        catch
-                        {
-                            valueObj = null;
-                        }
+                            double? factor = this.StretchFactor;
+                            if (mergedArgs.TryGetValue("factor", out var fObj))
+                            {
+                                try { factor = Convert.ToDouble(fObj, System.Globalization.CultureInfo.InvariantCulture); } catch { }
+                            }
 
-                        if (valueObj != null)
-                        {
-                            args[argName] = valueObj;
+                            // Update progress label before each preset execution
+                            this.label_kernelProgress.Text = $"{currentComb + 1} / {presetsPerTrack} / {totalComb}";
+                            CudaLog.Info($"Executing kernel '{kernelName}' on audio '{audio.Name}' with preset '{preset.Name}' (chunkSize={chunkSize}, overlap={overlap}, factor={factor})", null, "UI");
+
+							var res = await this.Cuda.ExecuteAudioKernelAutoAsync(
+                                audio,
+                                kernelName,
+                                chunkSize,
+                                overlap,
+                                factor,
+                                mergedArgs,
+                                true,
+                                progress);
+
+                            if (res != null)
+                            {
+                                // Name result by preset name
+                                res.Name = audio.Name + " [" + preset.Name + "]";
+                                this.AudioC.Add(res);
+                            }
+
+                            this.progressBar_cudaKernel.Value = 0;
+                            currentComb++;
+                            this.label_kernelProgress.Text = $"{currentComb} / {presetsPerTrack} / {totalComb}";
                         }
                     }
                 }
             }
 
-            // --- Wrapper params (optional via args) ---
-            int chunkSize = 0;
-            float overlap = 0.0f;
-
-            // allow both "chunkSize" and "__chunkSize"
-            if (args.TryGetValue("chunkSize", out var cs) || args.TryGetValue("__chunkSize", out cs))
+            if (altFlag)
             {
-                try { chunkSize = Convert.ToInt32(cs); } catch { chunkSize = 0; }
-                args.Remove("chunkSize"); args.Remove("__chunkSize");
+                var acv = new AudioCollectionView(this.AudioC.Items);
             }
 
-            if (args.TryGetValue("overlap", out var ov) || args.TryGetValue("__overlap", out ov))
-            {
-                try { overlap = Convert.ToSingle(ov); } catch { overlap = 0.0f; }
-                args.Remove("overlap"); args.Remove("__overlap");
-            }
-
-            // clamp rules
-            chunkSize = Math.Max(0, chunkSize);
-            overlap = Math.Clamp(overlap, 0.0f, 0.95f);
-
-            bool ctrl = ModifierKeys.HasFlag(Keys.Control);
-
-            try
-            {
-                // Ctrl only: show argument summary (does not change execution mode)
-                if (ctrl)
-                {
-                    var lines = new List<string>
-                    {
-                        $"Kernel: {kernelName}",
-                        $"chunkSize: {chunkSize}",
-                        $"overlap: {overlap}"
-                    };
-                    foreach (var kv in args)
-                    {
-                        lines.Add($"{kv.Key} = {kv.Value}");
-                    }
-                    MessageBox.Show(string.Join(Environment.NewLine, lines), "CUDA Args", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-
-                // Determine execution type dynamically
-                string kType = this.Cuda.GetKernelExecutionType(kernelName);
-
-                // Helper to infer output element type (2nd pointer arg base type if present)
-                static Type ResolveOutputElementType(Dictionary<string, Type>? defs)
-                {
-                    if (defs == null || defs.Count == 0)
-                    {
-                        return typeof(float);
-                    }
-                    var ptrs = defs.Where(kv => kv.Value.IsPointer).Select(kv => kv.Value.GetElementType()).Where(t => t != null).Cast<Type>().ToList();
-                    if (ptrs.Count >= 2)
-                    {
-                        return ptrs[1];
-                    }
-                    if (ptrs.Count == 1)
-                    {
-                        return ptrs[0];
-                    }
-                    return typeof(float);
-                }
-
-                var outElemType = ResolveOutputElementType(this.KernelArgumentDefinitions);
-
-                switch (kType.ToLowerInvariant())
-                {
-                    case "in-place":
-                        await this.Cuda.ExecuteAudioKernelInPlaceAsync(
-                            audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
-                        CudaLog.Info("InPlace kernel execution finished.", kernelName);
-                        break;
-
-                    case "out-of-place":
-                        {
-                            var outAudio = await this.Cuda.ExecuteAudioKernelOutOfPlaceAsync(
-                                audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
-                            if (outAudio == null)
-                            {
-                                MessageBox.Show("Kernel execution failed (no output).", "CUDA", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                                return;
-                            }
-                            if (this.checkBox_autoApply.Checked)
-                            {
-                                try
-                                {
-                                    audio.CopyAudioObj(outAudio);
-                                    CudaLog.Info("Applied OutOfPlace result back to current audio.", kernelName);
-                                }
-                                catch (Exception ex)
-                                {
-                                    CudaLog.Error(ex, "Failed to apply OutOfPlace result back to current audio.");
-                                }
-                            }
-                            CudaLog.Info("OutOfPlace kernel execution finished.", kernelName);
-                        }
-                        break;
-
-                    case "getvalue":
-                        {
-                            var mi = typeof(CudaService).GetMethod(nameof(CudaService.ExecuteAudioKernelGetValueAsync))!;
-                            var gmi = mi.MakeGenericMethod(outElemType);
-                            var taskObj = (Task) gmi.Invoke(this.Cuda, [audio, kernelName, chunkSize, overlap, args, CancellationToken.None])!;
-                            await taskObj.ConfigureAwait(true);
-                            var resultProp = taskObj.GetType().GetProperty("Result");
-                            var value = resultProp?.GetValue(taskObj);
-                            MessageBox.Show($"Kernel '{kernelName}' returned: {value ?? "<null>"}", $"CUDA GetValue<{outElemType.Name}>", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        }
-                        break;
-
-                    case "getdata":
-                        {
-                            var mi = typeof(CudaService).GetMethod(nameof(CudaService.ExecuteAudioKernelGetDataAsync))!;
-                            var gmi = mi.MakeGenericMethod(outElemType);
-                            var taskObj = (Task) gmi.Invoke(this.Cuda, [audio, kernelName, chunkSize, overlap, args, CancellationToken.None])!;
-                            await taskObj.ConfigureAwait(true);
-                            var resultProp = taskObj.GetType().GetProperty("Result");
-                            var data = resultProp?.GetValue(taskObj) as Array;
-                            if (data == null || data.Length == 0)
-                            {
-                                MessageBox.Show("Kernel returned no data.", $"CUDA GetData<{outElemType.Name}>", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                                return;
-                            }
-                            MessageBox.Show($"Kernel returned {data.Length} elements of {outElemType.Name}.", $"CUDA GetData<{outElemType.Name}>", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        }
-                        break;
-
-                    default:
-                        // Fallback: InPlace
-                        await this.Cuda.ExecuteAudioKernelInPlaceAsync(
-                            audio, kernelName, chunkSize: chunkSize, overlap: overlap, arguments: args).ConfigureAwait(true);
-                        CudaLog.Info("InPlace kernel execution finished.", kernelName);
-                        break;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                CudaLog.Info("Kernel execution canceled.", kernelName);
-            }
-            catch (Exception ex)
-            {
-                CudaLog.Error(ex, $"Kernel execution failed: {kernelName}");
-                MessageBox.Show(ex.Message, "CUDA Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            this.button_cudaExecute.Enabled = true;
+            this.progressBar_cudaKernel.Value = 0;
+            WindowMain.UpdateAllCollectionViews();
+            WindowMain.UpdateTrackDependentUi();
         }
 
-        private void listBox_cudaLog_RightClick(object sender, MouseEventArgs e)
+		private async void button_cufft_Click(object sender, EventArgs e)
+		{
+            if (!this.Cuda.Initialized)
+            {
+                MessageBox.Show("CUDA not initialized.", "CUFFT", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+			}
+
+			// CtrlFlag for serial execution instead of asMany
+			bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+
+			var audios = WindowMain.SelectedAudios.ToList();
+            if (audios.Count < 1)
+            {
+                MessageBox.Show("No audio loaded/selected.", "CUFFT", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+			}
+
+            IProgress<double> progress = ProgressAdapters.ToProgressBar(this.progressBar_cudaKernel, this.progressBar_cudaKernel.Maximum);
+            this.button_cufft.Enabled = false;
+
+			foreach (var audio in audios)
+            {
+                var res = await this.Cuda.ExecuteCufftAsync(audio, this.ChunkSize, this.Overlap, !ctrlFlag, progress);
+                audio.Pointer = res ?? IntPtr.Zero;
+			}
+
+            this.button_cufft.Enabled = true;
+			this.progressBar_cudaKernel.Value = 0;
+			WindowMain.UpdateAllCollectionViews();
+            WindowMain.UpdateTrackDependentUi((audios.Count == 1 ? audios.First() : null));
+		}
+
+
+
+		private void listBox_cudaLog_RightClick(object sender, MouseEventArgs e)
         {
             // Nur auf Rechtsklick reagieren
             if (e.Button != MouseButtons.Right)
@@ -749,6 +827,93 @@ namespace LPAP.Forms
             }
         }
 
+		private void listBox_cudaLog_MouseDoubleClick(object sender, MouseEventArgs e)
+		{
+			if (!ModifierKeys.HasFlag(Keys.Control))
+			{
+				return;
+			}
 
-    }
+			var items = this.listBox_cudaLog.Items.Cast<string>().ToArray();
+			string text = string.Join(Environment.NewLine, items);
+
+			try
+			{
+				Clipboard.SetText(text);
+			}
+			catch (Exception ex)
+			{
+				CudaLog.Warn(ex.ToString());
+			}
+		}
+
+		private void numericUpDown_chunkSize_ValueChanged(object sender, EventArgs e)
+		{
+            NumericUpDown? argNum = this.KernelArgumentControls?
+                .Where(kvp => kvp.Value is NumericUpDown)
+                .Select(kvp => (kvp.Key, Control: kvp.Value as NumericUpDown))
+                .FirstOrDefault(t => (t.Key.Contains("size", StringComparison.OrdinalIgnoreCase) &! t.Key.Contains("overlap", StringComparison.OrdinalIgnoreCase)) || t.Key.Contains("length", StringComparison.OrdinalIgnoreCase)).Control as NumericUpDown;
+
+			if (argNum != null)
+            {
+                argNum.Value = this.ChunkSize;
+			}
+		}
+
+		private void numericUpDown_overlap_ValueChanged(object sender, EventArgs e)
+		{
+            NumericUpDown? argNum = this.KernelArgumentControls?
+                .Where(kvp => kvp.Value is NumericUpDown)
+                .Select(kvp => (kvp.Key, Control: kvp.Value as NumericUpDown))
+                .FirstOrDefault(t => t.Key.Equals("overlap", StringComparison.OrdinalIgnoreCase)).Control as NumericUpDown;
+            Type? argType = this.KernelArgumentDefinitions != null && this.KernelArgumentDefinitions.ContainsKey("overlap")
+                ? this.KernelArgumentDefinitions["overlap"]
+                : null;
+
+            if (argNum != null && argType != null)
+            {
+                if (argType == typeof(float))
+                {
+                    argNum.Value = (decimal) (float) this.Overlap;
+                }
+                else if (argType == typeof(double))
+                {
+                    argNum.Value = (decimal) (double) this.Overlap;
+                }
+                else if (argType == typeof(decimal))
+                {
+                    argNum.Value = (decimal) this.Overlap;
+                }
+                else if (argType == typeof(int) || argType == typeof(long))
+                {
+                    argNum.Value = (decimal)(float) (this.ChunkSize * this.Overlap);
+                }
+            }
+		}
+
+
+		// Apply preset over current args and return merged dictionary
+		private static Dictionary<string, object> ApplyPresetToArgs(
+			Dictionary<string, object>? currentArgs,
+			CudaKernelPresets.CudaKernelPreset preset)
+		{
+			var merged = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+			if (currentArgs != null)
+			{
+				foreach (var kv in currentArgs)
+				{
+					merged[kv.Key] = kv.Value;
+				}
+			}
+
+			foreach (var kv in preset.Arguments)
+			{
+				merged[kv.Key] = kv.Value;
+			}
+
+			return merged;
+		}
+
+	}
 }
