@@ -95,7 +95,8 @@ namespace LPAP.Forms.Dialogs
         internal void InitializeDialogValues()
         {
             this.label_cuda.Text = WindowMain.CudaDevice != null ? $"CUDA: {WindowMain.CudaDevice}" : "CUDA: <Offline>";
-            this.comboBox_codecPreset.DataSource = NvencVideoRenderer.GetAllPresetEntries(!string.IsNullOrEmpty(WindowMain.CudaDevice));
+            // this.comboBox_codecPreset.DataSource = NvencVideoRenderer.GetAllPresetEntries(!string.IsNullOrEmpty(WindowMain.CudaDevice));
+            this.comboBox_codecPreset.DataSource = NvencVideoRenderer.GetAllPresetEntries(true);
             this.comboBox_codecPreset.DisplayMember = nameof(NvencVideoRenderer.PresetEntry.DisplayName);
             this.comboBox_codecPreset.ValueMember = nameof(NvencVideoRenderer.PresetEntry.Options);
 

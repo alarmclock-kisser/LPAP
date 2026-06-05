@@ -71,6 +71,79 @@ namespace LPAP.Cuda
             "256x144"
         ];
 
+        private static string ResolveExternalToolPath(string toolName)
+        {
+            if (string.IsNullOrWhiteSpace(toolName))
+            {
+                return toolName;
+            }
+
+            if (Path.IsPathRooted(toolName)
+                || toolName.Contains(Path.DirectorySeparatorChar)
+                || toolName.Contains(Path.AltDirectorySeparatorChar))
+            {
+                return toolName;
+            }
+
+            string fileName = Path.HasExtension(toolName) ? toolName : toolName + ".exe";
+
+            foreach (string dir in EnumerateExternalToolSearchDirectories())
+            {
+                try
+                {
+                    string candidate = Path.Combine(dir, fileName);
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return toolName;
+        }
+
+        private static IEnumerable<string> EnumerateExternalToolSearchDirectories()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            static IEnumerable<string> Expand(string? baseDir)
+            {
+                if (string.IsNullOrWhiteSpace(baseDir))
+                {
+                    yield break;
+                }
+
+                yield return baseDir;
+                yield return Path.Combine(baseDir, "bin");
+                yield return Path.Combine(baseDir, "ffmpeg");
+                yield return Path.Combine(baseDir, "ffmpeg", "bin");
+            }
+
+            string[] baseDirs =
+            [
+                AppContext.BaseDirectory,
+                Directory.GetCurrentDirectory(),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetEnvironmentVariable("ProgramW6432") ?? string.Empty,
+                @"C:\Programme"
+            ];
+
+            foreach (string baseDir in baseDirs)
+            {
+                foreach (string candidate in Expand(baseDir))
+                {
+                    if (seen.Add(candidate))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
+        }
+
         // ------------------------------------------------------------
         // Public: Image[] + optional Audio-File
         // ------------------------------------------------------------
@@ -538,7 +611,7 @@ namespace LPAP.Cuda
 
             var psi = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = ResolveExternalToolPath("ffmpeg"),
                 Arguments = args,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
@@ -869,7 +942,7 @@ namespace LPAP.Cuda
 
             var psi = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = ResolveExternalToolPath("ffmpeg"),
                 Arguments = args,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
@@ -1069,7 +1142,7 @@ namespace LPAP.Cuda
 
             var psi = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = ResolveExternalToolPath("ffmpeg"),
                 Arguments = args,
                 UseShellExecute = false,
                 RedirectStandardInput = true,

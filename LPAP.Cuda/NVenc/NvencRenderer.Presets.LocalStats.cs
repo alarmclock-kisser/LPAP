@@ -954,7 +954,7 @@ namespace LPAP.Cuda
             {
                 var psi = new ProcessStartInfo
                 {
-                    FileName = fileName,
+                    FileName = ResolveExternalToolPath(fileName),
                     Arguments = args,
                     CreateNoWindow = true,
                     UseShellExecute = false,
