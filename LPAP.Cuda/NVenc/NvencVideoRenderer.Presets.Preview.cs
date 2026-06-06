@@ -161,6 +161,7 @@ namespace LPAP.Cuda
                                 frameRate: (float) this._fps,
                                 maxWorkers: this._maxWorkers,
                                 channelCapacity: this._channelCapacity,
+                                overlayStrings: null,
                                 progress: null,
                                 ct: ct);
                         }

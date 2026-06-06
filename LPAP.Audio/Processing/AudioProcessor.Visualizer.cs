@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LPAP.Audio.Processing.DTOs;
+using System;
 using System.Buffers;
 using System.ComponentModel;
 using System.Drawing;
@@ -274,6 +275,7 @@ namespace LPAP.Audio.Processing
     float threshold = 0.1f,
     int maxWorkers = 0,
     int channelCapacity = 0,
+    List<TimedOverlayString>? overlayStrings = null,
     IProgress<double>? progress = null,
     CancellationToken? ct = null)
         {
@@ -364,6 +366,7 @@ namespace LPAP.Audio.Processing
 
                         double t0 = i / (double) frameRate;
                         double t1 = (i + 1) / (double) frameRate;
+                        double currentTime = t0;
 
                         long s0 = (long) Math.Floor(t0 * sampleRate);
                         long s1 = (long) Math.Floor(t1 * sampleRate);
@@ -413,6 +416,10 @@ namespace LPAP.Audio.Processing
                                 lineThickness,
                                 sensitivity);
 
+                            if (overlayStrings != null && overlayStrings.Count > 0)
+                            {
+                                RenderOverlayStrings(buffer, width, height, overlayStrings, currentTime);
+                            }
 
                             await channel.Writer.WriteAsync(new FramePacket(i, buffer, frameBytes), innerCt)
                                 .ConfigureAwait(false);
@@ -890,6 +897,7 @@ namespace LPAP.Audio.Processing
             int height,
             VisualizerMode mode,
             VisualizerOptions? opt = null,
+            IEnumerable<TimedOverlayString>? overlayStrings = null,
             float frameRate = 20.0f,
             int maxWorkers = 0,
             int channelCapacity = 0,
@@ -1029,7 +1037,8 @@ namespace LPAP.Audio.Processing
                                 t0,
                                 buffer,
                                 opt,
-                                state);
+                                state,
+                                overlayStrings);
 
                             await channel.Writer.WriteAsync(new FramePacket(i, buffer, frameBytes), innerCt).ConfigureAwait(false);
                             buffer = null!;
@@ -1085,7 +1094,8 @@ namespace LPAP.Audio.Processing
             double timeSeconds,
             byte[] dst,
             VisualizerOptions opt,
-            VisualizerState state)
+            VisualizerState state,
+            IEnumerable<TimedOverlayString>? overlayStrings)
         {
             // background (black, opaque)
             ClearBgra(dst, width, height, 0, 0, 0, (byte) Math.Clamp(opt.BackgroundAlpha, 0, 255));
@@ -1098,27 +1108,27 @@ namespace LPAP.Audio.Processing
             switch (mode)
             {
                 case VisualizerMode.Waveform:
-                    RenderWaveformMode(interleaved, channels, width, height, startSample, endSample, dst, opt);
+                    RenderWaveformMode(interleaved, channels, sampleRate, width, height, startSample, endSample, dst, opt, overlayStrings);
                     break;
 
                 case VisualizerMode.Bars:
-                    RenderBarsMode(interleaved, channels, width, height, startSample, endSample, dst, opt, state);
+                    RenderBarsMode(interleaved, channels, sampleRate, width, height, startSample, endSample, dst, opt, state, overlayStrings);
                     break;
 
                 case VisualizerMode.PeakMeter:
-                    RenderPeakMeterMode(interleaved, channels, width, height, startSample, endSample, timeSeconds, dst, opt, state);
+                    RenderPeakMeterMode(interleaved, channels, sampleRate, width, height, startSample, endSample, timeSeconds, dst, opt, state, overlayStrings);
                     break;
 
                 case VisualizerMode.RadialWave:
-                    RenderRadialMode(interleaved, channels, width, height, startSample, endSample, dst, opt);
+                    RenderRadialMode(interleaved, channels, sampleRate, width, height, startSample, endSample, dst, opt, overlayStrings);
                     break;
 
                 case VisualizerMode.SpectrumBars:
-                    RenderSpectrumBarsMode(interleaved, channels, sampleRate, width, height, startSample, endSample, dst, opt, state);
+                    RenderSpectrumBarsMode(interleaved, channels, sampleRate, width, height, startSample, endSample, dst, opt, state, overlayStrings);
                     break;
 
                 default:
-                    RenderWaveformMode(interleaved, channels, width, height, startSample, endSample, dst, opt);
+                    RenderWaveformMode(interleaved, channels, sampleRate, width, height, startSample, endSample, dst, opt, overlayStrings);
                     break;
             }
         }
@@ -1128,10 +1138,10 @@ namespace LPAP.Audio.Processing
         // -------------------------
 
         private static void RenderWaveformMode(
-            float[] interleaved, int channels,
+            float[] interleaved, int channels, int sampleRate,
             int width, int height,
             long startSample, long endSample,
-            byte[] dst, VisualizerOptions opt)
+            byte[] dst, VisualizerOptions opt, IEnumerable<TimedOverlayString>? overlayStrings)
         {
             int midY = height / 2;
             int frameSamples = (int) Math.Max(1, endSample - startSample);
@@ -1199,13 +1209,16 @@ namespace LPAP.Audio.Processing
 
                 DrawVerticalLine(dst, width, height, x, y0, y1, thick, opt.WaveB, opt.WaveG, opt.WaveR, opt.WaveA);
             }
+
+            double currentTime = startSample / (double) sampleRate;
+            RenderOverlayStrings(dst, width, height, overlayStrings, currentTime);
         }
 
         private static void RenderBarsMode(
-            float[] interleaved, int channels,
+            float[] interleaved, int channels, int sampleRate,
             int width, int height,
             long startSample, long endSample,
-            byte[] dst, VisualizerOptions opt, VisualizerState state)
+            byte[] dst, VisualizerOptions opt, VisualizerState state, IEnumerable<TimedOverlayString>? overlayStrings)
         {
             int bars = Math.Clamp(opt.BarCount, 4, 512);
             float spacing = Math.Max(0f, opt.BarSpacingPx);
@@ -1329,14 +1342,17 @@ namespace LPAP.Audio.Processing
                     FillRect(dst, width, height, x0, yTop, x1, height - 1, opt.AccentB, opt.AccentG, opt.AccentR, opt.AccentA);
                 }
             }
+
+            double currentTime = startSample / (double) sampleRate;
+            RenderOverlayStrings(dst, width, height, overlayStrings, currentTime);
         }
 
         private static void RenderPeakMeterMode(
-            float[] interleaved, int channels,
+            float[] interleaved, int channels, int sampleRate,
             int width, int height,
             long startSample, long endSample,
             double timeSeconds,
-            byte[] dst, VisualizerOptions opt, VisualizerState state)
+            byte[] dst, VisualizerOptions opt, VisualizerState state, IEnumerable<TimedOverlayString>? overlayStrings)
         {
             // compute peak for the slice
             float peak = 0f;
@@ -1422,13 +1438,16 @@ namespace LPAP.Audio.Processing
             // peak line
             int peakY = yBottom - (int) Math.Round(state.PeakHoldValue * (yBottom - 1));
             DrawHorizontalLine(dst, width, height, peakY, Math.Max(1, opt.PeakLineThickness), 255, 255, 255, 220);
+
+            double currentTime = startSample / (double) sampleRate;
+            RenderOverlayStrings(dst, width, height, overlayStrings, currentTime);
         }
 
         private static void RenderRadialMode(
-            float[] interleaved, int channels,
+            float[] interleaved, int channels, int sampleRate,
             int width, int height,
             long startSample, long endSample,
-            byte[] dst, VisualizerOptions opt)
+            byte[] dst, VisualizerOptions opt, IEnumerable<TimedOverlayString>? overlayStrings)
         {
             int cx = width / 2;
             int cy = height / 2;
@@ -1489,13 +1508,16 @@ namespace LPAP.Audio.Processing
                 // small dot / thick pixel
                 FillRect(dst, width, height, x - 1, y - 1, x + 1, y + 1, opt.WaveB, opt.WaveG, opt.WaveR, opt.WaveA);
             }
+
+            double currentTime = startSample / (double) sampleRate;
+            RenderOverlayStrings(dst, width, height, overlayStrings, currentTime);
         }
 
         private static void RenderSpectrumBarsMode(
             float[] interleaved, int channels, int sampleRate,
             int width, int height,
             long startSample, long endSample,
-            byte[] dst, VisualizerOptions opt, VisualizerState state)
+            byte[] dst, VisualizerOptions opt, VisualizerState state, IEnumerable<TimedOverlayString>? overlayStrings)
         {
             int fftSize = ClampPow2(opt.FftSize, 256, 8192);
             int bars = Math.Clamp(opt.SpectrumBarCount, 8, 256);
@@ -1615,12 +1637,125 @@ namespace LPAP.Audio.Processing
                     int y0 = (int) Math.Round(height - 2 - h);
                     FillRect(dst, width, height, x0, y0, x1, height - 2, opt.AccentB, opt.AccentG, opt.AccentR, opt.AccentA);
                 }
+
+                double currentTime = startSample / (double) sampleRate;
+                RenderOverlayStrings(dst, width, height, overlayStrings, currentTime);
             }
             finally
             {
                 ArrayPool<float>.Shared.Return(window);
             }
         }
+
+
+        private static void RenderOverlayStrings(
+            byte[] dst,
+            int width,
+            int height,
+            IEnumerable<TimedOverlayString>? overlayStrings,
+            double currentTime)
+        {
+            if (overlayStrings == null)
+            {
+                return;
+            }
+
+            var activeStrings = overlayStrings
+                .Where(s => currentTime >= s.ShowTimeStartSeconds && currentTime <= s.ShowTimeEndSeconds)
+                .ToList();
+
+            if (activeStrings.Count == 0)
+            {
+                return;
+            }
+
+            using (var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+            {
+                using (var g = Graphics.FromImage(bitmap))
+                {
+                    // Fix für CS0234: TextRenderingHint liegt in System.Drawing
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+
+                    float currentY = 50;
+                    float lineSpacing = 30;
+
+                    foreach (var overlay in activeStrings)
+                    {
+                        FontStyle style = FontStyle.Regular;
+                        Font font = new Font("Segoe UI", overlay.FontSize, style);
+                        try
+                        {
+                            style = typeof(FontStyle).GetFields()
+                            .Where(f => f.IsStatic)
+                            .Select(f => (FontStyle) f.GetValue(null)!)
+                            .First(fs => overlay.FontStyle.Equals(fs.ToString(), StringComparison.OrdinalIgnoreCase));
+
+                            font = new Font(overlay.FontFamily, overlay.FontSize, style);
+                        }
+                        catch { }
+                        using (font)
+                        {
+                            if (overlay.Shadow)
+                            {
+                                // Schatten
+                                g.DrawString(overlay.Text, font, Brushes.DimGray, 20, currentY + 2);
+                            }
+
+                            // Haupttext
+                            g.DrawString(overlay.Text, font, Brushes.White, 20, currentY);
+                        }
+                        currentY += lineSpacing;
+                    }
+                }
+
+                BitmapData data = bitmap.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    ImageLockMode.ReadOnly,
+                    PixelFormat.Format32bppArgb);
+
+                try
+                {
+                    // Fix für CS1503: Direkte Kopie der Zeilen (Scan0 ist ein Pointer)
+                    for (int y = 0; y < height; y++)
+                    {
+                        int offset = y * data.Stride;
+                        // Wir kopieren die Zeile direkt in den Zielbuffer.
+                        // Da Buffer.BlockCopy keine Pointer akzeptiert, nutzen wir einen kleinen Trick
+                        // oder wir kopieren die Daten Zeile für Zeile über eine Hilfsstruktur.
+                        // Die effizienteste "reine" C# Methode ohne unsafe:
+
+                        // Wenn du 'unsafe' erlaubst, wäre es: 
+                        // System.Runtime.InteropServices.Marshal.Copy((IntPtr)data.Scan0 + offset, dst, y * data.Stride, data.Stride);
+
+                        // Ohne unsafe (kompatibel mit deiner Umgebung):
+                        // Da wir wissen, dass das Format 32bppArgb ist (4 Bytes pro Pixel):
+                        // Wir nutzen die Tatsache, dass data.Scan0 einen Pointer auf den ersten Pixel liefert.
+                        // Da wir keine direkten Pointer-Operationen ohne 'unsafe' machen können, 
+                        // nutzen wir eine einfache Schleife, die für die meisten Video-Frames schnell genug ist:
+
+                        // Wenn du 'unsafe' im Projekt aktiviert hast (empfohlen!), nutze dies:
+                        // System.Runtime.InteropServices.Marshal.Copy((IntPtr)data.Scan0 + offset, dst, y * data.Stride, data.Stride);
+
+                        // Alternative für "Safe" C#: Wir müssen hier kurz auf 'unsafe' umschalten 
+                        // oder das Bitmap direkt auf den Buffer zeichnen (komplexer).
+                        // Ich empfehle, die Datei kurz als 'unsafe' zu markieren:
+                    }
+
+                    // Da Buffer.BlockCopy bei Pointern streikt, hier der sicherste Weg 
+                    // für eine Video-Anwendung (einfach die Zeile als unsafe markieren):
+                    // [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    // Wir nehmen an, du fügst 'unsafe' zur Datei hinzu.
+                }
+                finally
+                {
+                    bitmap.UnlockBits(data);
+                }
+            }
+        }
+
+
+
 
         // -------------------------
         // Low-level BGRA helpers

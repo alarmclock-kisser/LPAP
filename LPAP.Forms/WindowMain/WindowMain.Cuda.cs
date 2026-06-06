@@ -65,7 +65,7 @@ namespace LPAP.Forms
                 ? Convert.ToDouble(this.KernelArgumentValues.First(kv => kv.Key.Contains("fac", StringComparison.OrdinalIgnoreCase)).Value, System.Globalization.CultureInfo.InvariantCulture)
                 : null : null;
 
-		private static object? ExtractKernelArgControlValue(Control ctrl, Type targetType)
+        private static object? ExtractKernelArgControlValue(Control ctrl, Type targetType)
         {
             var effectiveType = Nullable.GetUnderlyingType(targetType) ?? targetType;
 
@@ -74,56 +74,56 @@ namespace LPAP.Forms
                 decimal d = nud.Value;
 
                 if (effectiveType == typeof(int))
-				{
-					return (int)d;
-				}
+                {
+                    return (int) d;
+                }
 
-				if (effectiveType == typeof(long))
-				{
-					return (long)d;
-				}
+                if (effectiveType == typeof(long))
+                {
+                    return (long) d;
+                }
 
-				if (effectiveType == typeof(float))
-				{
-					return (float)d;
-				}
+                if (effectiveType == typeof(float))
+                {
+                    return (float) d;
+                }
 
-				if (effectiveType == typeof(double))
-				{
-					return (double)d;
-				}
+                if (effectiveType == typeof(double))
+                {
+                    return (double) d;
+                }
 
-				if (effectiveType == typeof(decimal))
-				{
-					return d;
-				}
+                if (effectiveType == typeof(decimal))
+                {
+                    return d;
+                }
 
-				try { return Convert.ChangeType(d, effectiveType, System.Globalization.CultureInfo.InvariantCulture); } catch { return null; }
+                try { return Convert.ChangeType(d, effectiveType, System.Globalization.CultureInfo.InvariantCulture); } catch { return null; }
             }
 
             if (ctrl is CheckBox cb)
             {
                 if (effectiveType == typeof(bool))
-				{
-					return cb.Checked;
-				}
+                {
+                    return cb.Checked;
+                }
 
-				return cb.Checked ? 1 : 0;
+                return cb.Checked ? 1 : 0;
             }
 
             if (ctrl is TextBox tb)
             {
                 if (effectiveType == typeof(string))
-				{
-					return tb.Text;
-				}
+                {
+                    return tb.Text;
+                }
 
-				if (string.IsNullOrWhiteSpace(tb.Text) && Nullable.GetUnderlyingType(targetType) != null)
-				{
-					return null;
-				}
+                if (string.IsNullOrWhiteSpace(tb.Text) && Nullable.GetUnderlyingType(targetType) != null)
+                {
+                    return null;
+                }
 
-				try { return Convert.ChangeType(tb.Text, effectiveType, System.Globalization.CultureInfo.InvariantCulture); } catch { return tb.Text; }
+                try { return Convert.ChangeType(tb.Text, effectiveType, System.Globalization.CultureInfo.InvariantCulture); } catch { return tb.Text; }
             }
 
             if (ctrl is ComboBox combo)
@@ -144,7 +144,7 @@ namespace LPAP.Forms
         internal float Overlap => (float) this.numericUpDown_overlap.Value;
 
 
-		private void ListBox_Bind_CudaLog()
+        private void ListBox_Bind_CudaLog()
         {
             this.listBox_cudaLog.SuspendLayout();
             this.listBox_cudaLog.Items.Clear();
@@ -362,46 +362,46 @@ namespace LPAP.Forms
                             nud.Value = defVal;
                         }
                         catch { /* ignore */ }
-                        if ((argName.Contains("size", StringComparison.OrdinalIgnoreCase) &! argName.Contains("overlap", StringComparison.OrdinalIgnoreCase)) || argName.Contains("length", StringComparison.OrdinalIgnoreCase))
+                        if ((argName.Contains("size", StringComparison.OrdinalIgnoreCase) & !argName.Contains("overlap", StringComparison.OrdinalIgnoreCase)) || argName.Contains("length", StringComparison.OrdinalIgnoreCase))
                         {
                             nud.Value = this.ChunkSize;
-							nud.ValueChanged += (s, e) =>
+                            nud.ValueChanged += (s, e) =>
                             {
                                 int sizeVal = 0;
                                 if (argType == typeof(int))
                                 {
-                                    sizeVal = (int)nud.Value;
+                                    sizeVal = (int) nud.Value;
                                 }
                                 else if (argType == typeof(long))
                                 {
-                                    sizeVal = (int)(long)nud.Value;
+                                    sizeVal = (int) (long) nud.Value;
                                 }
                                 this.numericUpDown_chunkSize.Value = Math.Clamp(sizeVal, this.numericUpDown_chunkSize.Minimum, this.numericUpDown_chunkSize.Maximum);
-							};
-						}
+                            };
+                        }
                         else if (argName.Contains("overlap", StringComparison.OrdinalIgnoreCase))
                         {
                             nud.Value = (decimal) this.Overlap;
-							if (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal))
+                            if (argType == typeof(float) || argType == typeof(double) || argType == typeof(decimal))
                             {
                                 nud.ValueChanged += (s, e) =>
                                 {
                                     float overlapVal = 0f;
                                     if (argType == typeof(float))
                                     {
-                                        overlapVal = (float)nud.Value;
+                                        overlapVal = (float) nud.Value;
                                     }
                                     else if (argType == typeof(double))
                                     {
-                                        overlapVal = (float)(double)nud.Value;
+                                        overlapVal = (float) (double) nud.Value;
                                     }
                                     else if (argType == typeof(decimal))
                                     {
-                                        overlapVal = (float)(decimal)nud.Value;
+                                        overlapVal = (float) (decimal) nud.Value;
                                     }
-                                    this.numericUpDown_overlap.Value = Math.Clamp((decimal)overlapVal, this.numericUpDown_overlap.Minimum, this.numericUpDown_overlap.Maximum);
-								};
-							}
+                                    this.numericUpDown_overlap.Value = Math.Clamp((decimal) overlapVal, this.numericUpDown_overlap.Minimum, this.numericUpDown_overlap.Maximum);
+                                };
+                            }
                             else if (argType == typeof(int) || argType == typeof(long))
                             {
                                 nud.ValueChanged += (s, e) =>
@@ -409,18 +409,18 @@ namespace LPAP.Forms
                                     int overlapVal = 0;
                                     if (argType == typeof(int))
                                     {
-                                        overlapVal = (int)nud.Value;
+                                        overlapVal = (int) nud.Value;
                                     }
                                     else if (argType == typeof(long))
                                     {
-                                        overlapVal = (int)(long)nud.Value;
+                                        overlapVal = (int) (long) nud.Value;
                                     }
-                                    this.numericUpDown_overlap.Value = (decimal)overlapVal / this.ChunkSize;
+                                    this.numericUpDown_overlap.Value = (decimal) overlapVal / this.ChunkSize;
                                 };
-							}
-						}
+                            }
+                        }
 
-						input = nud;
+                        input = nud;
                     }
 
                     // tag the control with (argName,argType) for later extraction
@@ -723,7 +723,7 @@ namespace LPAP.Forms
                             this.label_kernelProgress.Text = $"{currentComb + 1} / {presetsPerTrack} / {totalComb}";
                             CudaLog.Info($"Executing kernel '{kernelName}' on audio '{audio.Name}' with preset '{preset.Name}' (chunkSize={chunkSize}, overlap={overlap}, factor={factor})", null, "UI");
 
-							var res = await this.Cuda.ExecuteAudioKernelAutoAsync(
+                            var res = await this.Cuda.ExecuteAudioKernelAutoAsync(
                                 audio,
                                 kernelName,
                                 chunkSize,
@@ -759,42 +759,42 @@ namespace LPAP.Forms
             WindowMain.UpdateTrackDependentUi();
         }
 
-		private async void button_cufft_Click(object sender, EventArgs e)
-		{
+        private async void button_cufft_Click(object sender, EventArgs e)
+        {
             if (!this.Cuda.Initialized)
             {
                 MessageBox.Show("CUDA not initialized.", "CUFFT", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
-			}
+            }
 
-			// CtrlFlag for serial execution instead of asMany
-			bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
+            // CtrlFlag for serial execution instead of asMany
+            bool ctrlFlag = (ModifierKeys & Keys.Control) == Keys.Control;
 
-			var audios = WindowMain.SelectedAudios.ToList();
+            var audios = WindowMain.SelectedAudios.ToList();
             if (audios.Count < 1)
             {
                 MessageBox.Show("No audio loaded/selected.", "CUFFT", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
-			}
+            }
 
             IProgress<double> progress = ProgressAdapters.ToProgressBar(this.progressBar_cudaKernel, this.progressBar_cudaKernel.Maximum);
             this.button_cufft.Enabled = false;
 
-			foreach (var audio in audios)
+            foreach (var audio in audios)
             {
                 var res = await this.Cuda.ExecuteCufftAsync(audio, this.ChunkSize, this.Overlap, !ctrlFlag, progress);
                 audio.Pointer = res ?? IntPtr.Zero;
-			}
+            }
 
             this.button_cufft.Enabled = true;
-			this.progressBar_cudaKernel.Value = 0;
-			WindowMain.UpdateAllCollectionViews();
+            this.progressBar_cudaKernel.Value = 0;
+            WindowMain.UpdateAllCollectionViews();
             WindowMain.UpdateTrackDependentUi((audios.Count == 1 ? audios.First() : null));
-		}
+        }
 
 
 
-		private void listBox_cudaLog_RightClick(object sender, MouseEventArgs e)
+        private void listBox_cudaLog_RightClick(object sender, MouseEventArgs e)
         {
             // Nur auf Rechtsklick reagieren
             if (e.Button != MouseButtons.Right)
@@ -827,41 +827,41 @@ namespace LPAP.Forms
             }
         }
 
-		private void listBox_cudaLog_MouseDoubleClick(object sender, MouseEventArgs e)
-		{
-			if (!ModifierKeys.HasFlag(Keys.Control))
-			{
-				return;
-			}
+        private void listBox_cudaLog_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (!ModifierKeys.HasFlag(Keys.Control))
+            {
+                return;
+            }
 
-			var items = this.listBox_cudaLog.Items.Cast<string>().ToArray();
-			string text = string.Join(Environment.NewLine, items);
+            var items = this.listBox_cudaLog.Items.Cast<string>().ToArray();
+            string text = string.Join(Environment.NewLine, items);
 
-			try
-			{
-				Clipboard.SetText(text);
-			}
-			catch (Exception ex)
-			{
-				CudaLog.Warn(ex.ToString());
-			}
-		}
+            try
+            {
+                Clipboard.SetText(text);
+            }
+            catch (Exception ex)
+            {
+                CudaLog.Warn(ex.ToString());
+            }
+        }
 
-		private void numericUpDown_chunkSize_ValueChanged(object sender, EventArgs e)
-		{
+        private void numericUpDown_chunkSize_ValueChanged(object sender, EventArgs e)
+        {
             NumericUpDown? argNum = this.KernelArgumentControls?
                 .Where(kvp => kvp.Value is NumericUpDown)
                 .Select(kvp => (kvp.Key, Control: kvp.Value as NumericUpDown))
-                .FirstOrDefault(t => (t.Key.Contains("size", StringComparison.OrdinalIgnoreCase) &! t.Key.Contains("overlap", StringComparison.OrdinalIgnoreCase)) || t.Key.Contains("length", StringComparison.OrdinalIgnoreCase)).Control as NumericUpDown;
+                .FirstOrDefault(t => (t.Key.Contains("size", StringComparison.OrdinalIgnoreCase) & !t.Key.Contains("overlap", StringComparison.OrdinalIgnoreCase)) || t.Key.Contains("length", StringComparison.OrdinalIgnoreCase)).Control as NumericUpDown;
 
-			if (argNum != null)
+            if (argNum != null)
             {
                 argNum.Value = this.ChunkSize;
-			}
-		}
+            }
+        }
 
-		private void numericUpDown_overlap_ValueChanged(object sender, EventArgs e)
-		{
+        private void numericUpDown_overlap_ValueChanged(object sender, EventArgs e)
+        {
             NumericUpDown? argNum = this.KernelArgumentControls?
                 .Where(kvp => kvp.Value is NumericUpDown)
                 .Select(kvp => (kvp.Key, Control: kvp.Value as NumericUpDown))
@@ -886,34 +886,34 @@ namespace LPAP.Forms
                 }
                 else if (argType == typeof(int) || argType == typeof(long))
                 {
-                    argNum.Value = (decimal)(float) (this.ChunkSize * this.Overlap);
+                    argNum.Value = (decimal) (float) (this.ChunkSize * this.Overlap);
                 }
             }
-		}
+        }
 
 
-		// Apply preset over current args and return merged dictionary
-		private static Dictionary<string, object> ApplyPresetToArgs(
-			Dictionary<string, object>? currentArgs,
-			CudaKernelPresets.CudaKernelPreset preset)
-		{
-			var merged = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        // Apply preset over current args and return merged dictionary
+        private static Dictionary<string, object> ApplyPresetToArgs(
+            Dictionary<string, object>? currentArgs,
+            CudaKernelPresets.CudaKernelPreset preset)
+        {
+            var merged = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-			if (currentArgs != null)
-			{
-				foreach (var kv in currentArgs)
-				{
-					merged[kv.Key] = kv.Value;
-				}
-			}
+            if (currentArgs != null)
+            {
+                foreach (var kv in currentArgs)
+                {
+                    merged[kv.Key] = kv.Value;
+                }
+            }
 
-			foreach (var kv in preset.Arguments)
-			{
-				merged[kv.Key] = kv.Value;
-			}
+            foreach (var kv in preset.Arguments)
+            {
+                merged[kv.Key] = kv.Value;
+            }
 
-			return merged;
-		}
+            return merged;
+        }
 
-	}
+    }
 }

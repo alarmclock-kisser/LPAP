@@ -653,7 +653,7 @@ namespace LPAP.OpenVino
                 }
                 catch
                 {
-                    shape = Array.Empty<long>();
+                    shape = [];
                 }
 
                 string et = "unknown";

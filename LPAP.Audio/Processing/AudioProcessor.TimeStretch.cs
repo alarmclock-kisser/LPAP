@@ -280,7 +280,7 @@ namespace LPAP.Audio.Processing
 
             if (!keepData)
             {
-                obj.Data = Array.Empty<float>();
+                obj.Data = [];
             }
 
             int ch = obj.Channels;
@@ -488,7 +488,7 @@ namespace LPAP.Audio.Processing
             // Free memory early if desired (keep snapshot in local var)
             if (!keepData)
             {
-                obj.Data = Array.Empty<float>();
+                obj.Data = [];
             }
 
             int ch = obj.Channels;
@@ -1115,8 +1115,8 @@ namespace LPAP.Audio.Processing
                 }
                 else
                 {
-                    this._refB = Array.Empty<float>();
-                    this._candB = Array.Empty<float>();
+                    this._refB = [];
+                    this._candB = [];
                 }
             }
 

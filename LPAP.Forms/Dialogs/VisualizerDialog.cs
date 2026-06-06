@@ -1,5 +1,6 @@
 ﻿using LPAP.Audio;
 using LPAP.Audio.Processing;
+using LPAP.Audio.Processing.DTOs;
 using LPAP.Cuda;
 using Microsoft.VisualBasic.Devices;
 using Microsoft.VisualBasic.FileIO;
@@ -36,6 +37,8 @@ namespace LPAP.Forms.Dialogs
 
         internal static Color PreviewBackColor = Color.White;
         internal static Color PreviewGraphColor = Color.Blue;
+
+        internal List<TimedOverlayString>? OverlayStrings = null;
 
 
 
@@ -409,6 +412,7 @@ namespace LPAP.Forms.Dialogs
                         threshold: (float) (this.numericUpDown_threshold.Value),
                         maxWorkers: this.MaxWorkers,
                         channelCapacity: 0,
+                        overlayStrings: this.OverlayStrings,
                         progress: renderProgress,
                         ct: token);
                 }
@@ -427,6 +431,7 @@ namespace LPAP.Forms.Dialogs
                         frameRate: frameRate,
                         maxWorkers: this.MaxWorkers,
                         channelCapacity: 0,
+                        overlayStrings: this.OverlayStrings,
                         progress: renderProgress,
                         ct: token);
                 }
@@ -845,6 +850,37 @@ namespace LPAP.Forms.Dialogs
             }
         }
 
+        private void button_addSubtitlesTxt_Click(object sender, EventArgs e)
+        {
+            // OFD in MyDocuments, filter .txt
+            OpenFileDialog openFileDialog = new()
+            {
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*",
+                FilterIndex = 1,
+                RestoreDirectory = true
+            };
+            if (openFileDialog.ShowDialog(this) == DialogResult.OK)
+            {
+                string[] content = File.ReadAllLines(openFileDialog.FileName);
+                this.OverlayStrings = [];
+                foreach (string subtitle in content)
+                {
+                    try
+                    {
+                        this.OverlayStrings?.Add(new TimedOverlayString(subtitle, fontFamily: "Arial", fontSize: 24f, fontStyle: "Bold", shadow: true, color: "#FFFFFF", xOffset: null, yOffset: null, rotation: 0f));
+                    }
+                    catch (Exception ex)
+                    {
+                        this.OverlayStrings = null;
+                        Console.WriteLine("Error parsing subtitle line: " + subtitle + Environment.NewLine + ex.Message, "Subtitle Parse Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
 
+                string info = $"Loaded {this.OverlayStrings?.Count ?? 0} Subtitles";
+                string msg = string.Join(Environment.NewLine, this.OverlayStrings?.Select(os => os.ToString()) ?? []);
+                MessageBox.Show(info + Environment.NewLine + msg, info, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
     }
 }

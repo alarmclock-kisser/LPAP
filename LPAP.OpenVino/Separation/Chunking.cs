@@ -8,7 +8,7 @@
         {
             if (totalFrames <= 0)
             {
-                return Array.Empty<Chunk>();
+                return [];
             }
 
             if (chunkFrames <= 0)

@@ -349,78 +349,78 @@ namespace LPAP.Cuda
             return sorted;
         }
 
-		public object[] MergeGenericKernelArgumentsDynamic(
-	string kernelCode,
-	CUdeviceptr? inputBuffer = null,
-	CUdeviceptr? outputBuffer = null,
-	CUdeviceptr? backfeedBuffer = null,
-	Dictionary<string, string>? arguments = null)
-		{
-			var argDefs = this._compiler.GetArguments(kernelCode);
-			if (argDefs.Count == 0)
-			{
-				return [];
-			}
+        public object[] MergeGenericKernelArgumentsDynamic(
+    string kernelCode,
+    CUdeviceptr? inputBuffer = null,
+    CUdeviceptr? outputBuffer = null,
+    CUdeviceptr? backfeedBuffer = null,
+    Dictionary<string, string>? arguments = null)
+        {
+            var argDefs = this._compiler.GetArguments(kernelCode);
+            if (argDefs.Count == 0)
+            {
+                return [];
+            }
 
-			Dictionary<string, string> provided = arguments != null
-				? new Dictionary<string, string>(arguments, StringComparer.OrdinalIgnoreCase)
-				: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> provided = arguments != null
+                ? new Dictionary<string, string>(arguments, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-			var merged = new object[argDefs.Count];
-			int pointerCount = 0;
+            var merged = new object[argDefs.Count];
+            int pointerCount = 0;
 
-			for (int i = 0; i < argDefs.Count; i++)
-			{
-				var (name, type) = argDefs.ElementAt(i);
+            for (int i = 0; i < argDefs.Count; i++)
+            {
+                var (name, type) = argDefs.ElementAt(i);
 
-				if (type.IsPointer)
-				{
-					// Pointer-Reihenfolge:
-					// 0 = input, 1 = output, 2 = backfeed/state
-					if (pointerCount == 0 && inputBuffer.HasValue)
-					{
-						merged[i] = inputBuffer.Value;
-					}
-					else if (pointerCount == 1 && outputBuffer.HasValue)
-					{
-						merged[i] = outputBuffer.Value;
-					}
-					else if (pointerCount == 2 && backfeedBuffer.HasValue)
-					{
-						merged[i] = backfeedBuffer.Value;
-					}
-					else
-					{
-						// user-supplied ptr by arg name
-						if (provided.TryGetValue(name, out var rawPtr) && TryParseDevicePtr(rawPtr, out var fromArgs))
-						{
-							merged[i] = fromArgs;
-						}
-						else
-						{
-							merged[i] = new CUdeviceptr(); // null ptr fallback
-						}
-					}
+                if (type.IsPointer)
+                {
+                    // Pointer-Reihenfolge:
+                    // 0 = input, 1 = output, 2 = backfeed/state
+                    if (pointerCount == 0 && inputBuffer.HasValue)
+                    {
+                        merged[i] = inputBuffer.Value;
+                    }
+                    else if (pointerCount == 1 && outputBuffer.HasValue)
+                    {
+                        merged[i] = outputBuffer.Value;
+                    }
+                    else if (pointerCount == 2 && backfeedBuffer.HasValue)
+                    {
+                        merged[i] = backfeedBuffer.Value;
+                    }
+                    else
+                    {
+                        // user-supplied ptr by arg name
+                        if (provided.TryGetValue(name, out var rawPtr) && TryParseDevicePtr(rawPtr, out var fromArgs))
+                        {
+                            merged[i] = fromArgs;
+                        }
+                        else
+                        {
+                            merged[i] = new CUdeviceptr(); // null ptr fallback
+                        }
+                    }
 
-					pointerCount++;
-					continue;
-				}
+                    pointerCount++;
+                    continue;
+                }
 
-				// scalar args
-				if (provided.TryGetValue(name, out var raw))
-				{
-					merged[i] = ParseScalar(type, raw);
-				}
-				else
-				{
-					merged[i] = type.IsValueType ? Activator.CreateInstance(type)! : 0;
-				}
-			}
+                // scalar args
+                if (provided.TryGetValue(name, out var raw))
+                {
+                    merged[i] = ParseScalar(type, raw);
+                }
+                else
+                {
+                    merged[i] = type.IsValueType ? Activator.CreateInstance(type)! : 0;
+                }
+            }
 
-			return merged;
-		}
+            return merged;
+        }
 
-		private static bool TryParseDevicePtr(string raw, out CUdeviceptr ptr)
+        private static bool TryParseDevicePtr(string raw, out CUdeviceptr ptr)
         {
             ptr = new CUdeviceptr();
             if (string.IsNullOrWhiteSpace(raw))
@@ -431,7 +431,7 @@ namespace LPAP.Cuda
             // Unterstütze dezimal und hex (0x...)
             if (ulong.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var u))
             {
-                ptr = new CUdeviceptr(new IntPtr(unchecked((long)u)));
+                ptr = new CUdeviceptr(new IntPtr(unchecked((long) u)));
                 return true;
             }
 
@@ -440,7 +440,7 @@ namespace LPAP.Cuda
             {
                 if (ulong.TryParse(raw.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var uh))
                 {
-                    ptr = new CUdeviceptr(new IntPtr(unchecked((long)uh)));
+                    ptr = new CUdeviceptr(new IntPtr(unchecked((long) uh)));
                     return true;
                 }
             }
@@ -460,43 +460,43 @@ namespace LPAP.Cuda
             var t = Nullable.GetUnderlyingType(type) ?? type;
 
             if (t == typeof(int) && int.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var i))
-			{
-				return i;
-			}
+            {
+                return i;
+            }
 
-			if (t == typeof(long) && long.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var l))
-			{
-				return l;
-			}
+            if (t == typeof(long) && long.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var l))
+            {
+                return l;
+            }
 
-			if (t == typeof(uint) && uint.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var u))
-			{
-				return u;
-			}
+            if (t == typeof(uint) && uint.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var u))
+            {
+                return u;
+            }
 
-			if (t == typeof(float) && float.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var f))
-			{
-				return f;
-			}
+            if (t == typeof(float) && float.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var f))
+            {
+                return f;
+            }
 
-			if (t == typeof(double) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
-			{
-				return d;
-			}
+            if (t == typeof(double) && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+            {
+                return d;
+            }
 
-			if (t == typeof(bool))
+            if (t == typeof(bool))
             {
                 if (raw == "0")
-				{
-					return false;
-				}
+                {
+                    return false;
+                }
 
-				if (raw == "1")
-				{
-					return true;
-				}
+                if (raw == "1")
+                {
+                    return true;
+                }
 
-				return bool.TryParse(raw, out var b) && b;
+                return bool.TryParse(raw, out var b) && b;
             }
 
             // Fallback

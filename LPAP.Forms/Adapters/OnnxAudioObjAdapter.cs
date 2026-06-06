@@ -189,7 +189,7 @@ namespace LPAP.Forms.Adapters
             ao.CopyAudioObj(src);
 
             ao.Name = $"{src.Name} - {suffix}";
-            ao.Data = Array.Empty<float>();
+            ao.Data = [];
 
             ao.SampleRate = sr;
             ao.Channels = ch;

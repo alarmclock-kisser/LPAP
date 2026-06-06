@@ -45,10 +45,25 @@ namespace LPAP.Audio.Processing
             IProgress<double>? progress,
             CancellationToken ct)
         {
-            if (obj == null) throw new ArgumentNullException(nameof(obj));
-            if (chunkSize <= 0) throw new ArgumentOutOfRangeException(nameof(chunkSize));
-            if (overlap < 0f || overlap >= 1f) throw new ArgumentOutOfRangeException(nameof(overlap));
-            if (factor <= 0) throw new ArgumentOutOfRangeException(nameof(factor));
+            if (obj == null)
+            {
+                throw new ArgumentNullException(nameof(obj));
+            }
+
+            if (chunkSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(chunkSize));
+            }
+
+            if (overlap < 0f || overlap >= 1f)
+            {
+                throw new ArgumentOutOfRangeException(nameof(overlap));
+            }
+
+            if (factor <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(factor));
+            }
 
             int cpuCount = Environment.ProcessorCount;
             int workers = maxWorkers <= 0 ? cpuCount : Math.Clamp(maxWorkers, 1, cpuCount);
@@ -78,8 +93,16 @@ namespace LPAP.Audio.Processing
                     pAgg * wAgg +
                     pNorm * wNorm;
 
-                if (total < 0) total = 0;
-                if (total > 1) total = 1;
+                if (total < 0)
+                {
+                    total = 0;
+                }
+
+                if (total > 1)
+                {
+                    total = 1;
+                }
+
                 progress?.Report(total);
             }
 
@@ -318,33 +341,39 @@ namespace LPAP.Audio.Processing
 
                 public WorkItem(Action action, TaskCompletionSource<bool> tcs, CancellationToken ct)
                 {
-                    Action = action;
-                    Tcs = tcs;
-                    Ct = ct;
+                    this.Action = action;
+                    this.Tcs = tcs;
+                    this.Ct = ct;
                 }
             }
 
             public FixedWorkerPool(int workerCount, ThreadPriority threadPriority, string threadNamePrefix)
             {
-                if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
+                if (workerCount <= 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(workerCount));
+                }
 
-                _threads = new Thread[workerCount];
+                this._threads = new Thread[workerCount];
                 for (int i = 0; i < workerCount; i++)
                 {
                     int idx = i;
-                    _threads[i] = new Thread(WorkerLoop)
+                    this._threads[i] = new Thread(this.WorkerLoop)
                     {
                         IsBackground = true,
                         Priority = threadPriority,
                         Name = $"{threadNamePrefix}-{idx}"
                     };
-                    _threads[i].Start();
+                    this._threads[i].Start();
                 }
             }
 
             public Task Run(Action action, CancellationToken ct)
             {
-                if (action == null) throw new ArgumentNullException(nameof(action));
+                if (action == null)
+                {
+                    throw new ArgumentNullException(nameof(action));
+                }
 
                 var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -354,13 +383,13 @@ namespace LPAP.Audio.Processing
                     return tcs.Task;
                 }
 
-                _queue.Add(new WorkItem(action, tcs, ct));
+                this._queue.Add(new WorkItem(action, tcs, ct));
                 return tcs.Task;
             }
 
             private void WorkerLoop()
             {
-                foreach (var item in _queue.GetConsumingEnumerable())
+                foreach (var item in this._queue.GetConsumingEnumerable())
                 {
                     if (item.Ct.IsCancellationRequested)
                     {
@@ -386,12 +415,12 @@ namespace LPAP.Audio.Processing
 
             public void Dispose()
             {
-                _queue.CompleteAdding();
-                foreach (var t in _threads)
+                this._queue.CompleteAdding();
+                foreach (var t in this._threads)
                 {
                     try { t.Join(); } catch { /* ignore */ }
                 }
-                _queue.Dispose();
+                this._queue.Dispose();
             }
         }
     }

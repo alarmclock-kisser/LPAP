@@ -63,6 +63,7 @@
             this.numericUpDown_thickness = new NumericUpDown();
             this.label_info_threshold = new Label();
             this.numericUpDown_threshold = new NumericUpDown();
+            this.button_addSubtitlesTxt = new Button();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_frameRate).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_startSeconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_endSeconds).BeginInit();
@@ -423,11 +424,22 @@
             this.numericUpDown_threshold.TabIndex = 33;
             this.numericUpDown_threshold.Value = new decimal(new int[] { 50, 0, 0, 196608 });
             // 
+            // button_addSubtitlesTxt
+            // 
+            this.button_addSubtitlesTxt.Location = new Point(303, 199);
+            this.button_addSubtitlesTxt.Name = "button_addSubtitlesTxt";
+            this.button_addSubtitlesTxt.Size = new Size(149, 23);
+            this.button_addSubtitlesTxt.TabIndex = 35;
+            this.button_addSubtitlesTxt.Text = "Add Subtitles TXT";
+            this.button_addSubtitlesTxt.UseVisualStyleBackColor = true;
+            this.button_addSubtitlesTxt.Click += this.button_addSubtitlesTxt_Click;
+            // 
             // VisualizerDialog
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(464, 441);
+            this.Controls.Add(this.button_addSubtitlesTxt);
             this.Controls.Add(this.label_info_threshold);
             this.Controls.Add(this.numericUpDown_threshold);
             this.Controls.Add(this.label_info_thickness);
@@ -517,5 +529,6 @@
 		private NumericUpDown numericUpDown_thickness;
 		private Label label_info_threshold;
 		private NumericUpDown numericUpDown_threshold;
-	}
+        private Button button_addSubtitlesTxt;
+    }
 }

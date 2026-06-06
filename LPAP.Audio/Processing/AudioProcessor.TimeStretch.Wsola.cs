@@ -22,22 +22,22 @@ namespace LPAP.Audio.Processing
         CancellationToken ct = default)
         {
             if (obj == null)
-			{
-				throw new ArgumentNullException(nameof(obj));
-			}
+            {
+                throw new ArgumentNullException(nameof(obj));
+            }
 
-			if (obj.Data == null || obj.Data.Length == 0)
-			{
-				return Task.FromResult(obj);
-			}
+            if (obj.Data == null || obj.Data.Length == 0)
+            {
+                return Task.FromResult(obj);
+            }
 
-			if (obj.SampleRate <= 0 || obj.Channels <= 0)
-			{
-				return Task.FromResult(obj);
-			}
+            if (obj.SampleRate <= 0 || obj.Channels <= 0)
+            {
+                return Task.FromResult(obj);
+            }
 
-			// clamp factor
-			factor = Math.Clamp(factor, 0.05, 8.0);
+            // clamp factor
+            factor = Math.Clamp(factor, 0.05, 8.0);
 
             // frame/overlap sanity
             int frameSize = Math.Clamp(chunkSize, 256, 16384);
@@ -46,12 +46,12 @@ namespace LPAP.Audio.Processing
             // analysis hop
             int hopA = frameSize - ovA;
             if (hopA <= 0)
-			{
-				hopA = Math.Max(1, frameSize / 2);
-			}
+            {
+                hopA = Math.Max(1, frameSize / 2);
+            }
 
-			// synthesis hop
-			int hopS = Math.Max(1, (int) Math.Round(hopA * factor));
+            // synthesis hop
+            int hopS = Math.Max(1, (int) Math.Round(hopA * factor));
 
             // IMPORTANT FIX:
             // true overlap in the OUTPUT is frameSize - hopS
@@ -70,12 +70,12 @@ namespace LPAP.Audio.Processing
                 int ch = obj.Channels;
                 int inFrames = obj.Data.Length / ch;
                 if (inFrames <= frameSize + 2)
-				{
-					return obj;
-				}
+                {
+                    return obj;
+                }
 
-				// output frames proportional to factor (keep some headroom)
-				int outFrames = Math.Max(frameSize + 2, (int) Math.Round(inFrames * factor));
+                // output frames proportional to factor (keep some headroom)
+                int outFrames = Math.Max(frameSize + 2, (int) Math.Round(inFrames * factor));
                 float[] outData = new float[outFrames * ch];
 
                 // equal-power crossfade ramps (better than linear)
@@ -103,11 +103,11 @@ namespace LPAP.Audio.Processing
                         float sum = 0f;
                         int baseIdx = f * ch;
                         for (int c = 0; c < ch; c++)
-						{
-							sum += obj.Data[baseIdx + c];
-						}
+                        {
+                            sum += obj.Data[baseIdx + c];
+                        }
 
-						inMono[f] = sum / ch;
+                        inMono[f] = sum / ch;
                     }
                 }
 
@@ -259,18 +259,18 @@ namespace LPAP.Audio.Processing
                     {
                         float a = Math.Abs(final[i]);
                         if (a > peak)
-						{
-							peak = a;
-						}
-					}
+                        {
+                            peak = a;
+                        }
+                    }
                     if (peak > 1e-6f)
                     {
                         float g = 0.99f / peak;
                         for (int i = 0; i < final.Length; i++)
-						{
-							final[i] *= g;
-						}
-					}
+                        {
+                            final[i] *= g;
+                        }
+                    }
                 }
 
                 // commit inplace
@@ -279,11 +279,11 @@ namespace LPAP.Audio.Processing
 
                 // tempo/bpm consistency (optional; keep if du BPM wirklich mitziehst)
                 if (obj.BeatsPerMinute > 1e-3)
-				{
-					obj.BeatsPerMinute = obj.BeatsPerMinute / factor;
-				}
+                {
+                    obj.BeatsPerMinute = obj.BeatsPerMinute / factor;
+                }
 
-				obj.DataChanged();
+                obj.DataChanged();
                 progress?.Report(1.0);
 
                 ArrayPool<float>.Shared.Return(fadeIn);

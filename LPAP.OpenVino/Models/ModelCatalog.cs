@@ -9,7 +9,7 @@ namespace LPAP.OpenVino.Models
             Guard.NotNullOrWhiteSpace(modelsRootDir, nameof(modelsRootDir));
             if (!Directory.Exists(modelsRootDir))
             {
-                return Array.Empty<(string, string, string?)>();
+                return [];
             }
 
             var xmls = Directory.EnumerateFiles(modelsRootDir, "*.xml", SearchOption.AllDirectories)

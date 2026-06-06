@@ -105,7 +105,7 @@ namespace LPAP.Onnx.Demucs
             int totalFrames = inputInterleaved.Length / channels;
             if (totalFrames <= 0)
             {
-                return Array.Empty<float[]>();
+                return [];
             }
 
             int segT =

@@ -159,7 +159,7 @@ namespace LPAP.Audio
             }).ConfigureAwait(true);
         }
 
-		public async Task ResampleAsync(int targetSampleRate = 44100, int maxWorkers = 0)
+        public async Task ResampleAsync(int targetSampleRate = 44100, int maxWorkers = 0)
         {
             maxWorkers = maxWorkers <= 0
                 ? Environment.ProcessorCount

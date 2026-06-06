@@ -241,9 +241,9 @@ namespace LPAP.Forms.Dialogs
                         input = new CheckBox();
                         if (this.SelectedMethod?.GetParameters().FirstOrDefault(p => p.Name?.Equals(argName, StringComparison.OrdinalIgnoreCase) == true)?.DefaultValue is bool defBool)
                         {
-                            ((CheckBox)input).Checked = defBool;
-						}
-					}
+                            ((CheckBox) input).Checked = defBool;
+                        }
+                    }
                     else if (argType.IsEnum)
                     {
                         var combo = new ComboBox
@@ -293,7 +293,7 @@ namespace LPAP.Forms.Dialogs
 
                             defVal = Math.Clamp(defVal, nud.Minimum, nud.Maximum);
                             nud.Value = defVal;
-                            if (defVal >= 4 && ((int)defVal & ((int)defVal - 1)) == 0)
+                            if (defVal >= 4 && ((int) defVal & ((int) defVal - 1)) == 0)
                             {
                                 NumericUpDown_RegisterPow2(nud);
                             }
@@ -494,8 +494,8 @@ namespace LPAP.Forms.Dialogs
                     if (prev <= 0)
                     {
                         prev = 1;
-					}
-					numeric.Value = Math.Clamp(prev * 2, numeric.Minimum, numeric.Maximum);
+                    }
+                    numeric.Value = Math.Clamp(prev * 2, numeric.Minimum, numeric.Maximum);
 
                 }
                 else
